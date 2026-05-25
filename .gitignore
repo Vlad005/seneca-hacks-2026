@@ -1,0 +1,27 @@
+# Env
+.env
+.env.local
+.env*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.python-version
+
+# Node / Next
+node_modules/
+.next/
+out/
+.turbo/
+
+# OS
+.DS_Store
+
+# Cache
+backend/cache/*
+!backend/cache/.gitkeep
+
+# Logs
+*.log
