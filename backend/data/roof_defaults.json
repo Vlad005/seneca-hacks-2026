@@ -1,0 +1,15 @@
+{
+  "tilt_deg": 30,
+  "azimuth_deg": 180,
+  "panel_count": 22,
+  "panel_area_sqm": 1.92,
+  "panel_efficiency_stc": 0.205,
+  "panel_temp_coeff_per_c": -0.004,
+  "panel_noct_c": 45,
+  "inverter_efficiency": 0.96,
+  "loss_wiring": 0.02,
+  "loss_soiling": 0.02,
+  "loss_mismatch": 0.01,
+  "ground_reflectance": 0.2,
+  "notes": "Defaults for an 8.4 kW Ontario residential system (22 panels × ~380W × 0.205 eff × 1.92 m^2). Override per-roof in /pv-analysis if you have eyeballed values."
+}

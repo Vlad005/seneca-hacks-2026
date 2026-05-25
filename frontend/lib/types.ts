@@ -10,6 +10,23 @@ export interface ExtractedBill {
   off_peak_kwh: number | null;
 }
 
+import type {
+  IncomeBracket,
+  OwnershipStructure,
+  PropertyType,
+} from "./eligibility";
+
+export interface RebateSelections {
+  isOwner: boolean;
+  propertyType: PropertyType;
+  incomeBracket: IncomeBracket;
+  ownershipStructure: OwnershipStructure;
+  /** "hrs" or "net-metering". */
+  meterChoice: "hrs" | "net-metering";
+  /** IDs of stackable programs the user wants included. */
+  includedExtras: string[];
+}
+
 export interface UsageProfile {
   /** 12-month kWh, oldest to newest (Jan to Dec ordering not assumed). */
   monthly_kwh: number[];
