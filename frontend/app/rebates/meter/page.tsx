@@ -110,9 +110,9 @@ export default function MeterChoicePage() {
                             Choose your solar program
                         </h1>
                         <p className="mt-3 max-w-xl text-[15px] text-[var(--muted)]">
-                            These two are mutually exclusive — Net Metering pays
-                            you over time in bill credits, HRS pays you upfront
-                            as a rebate.
+                            You can only pick one — Net Metering pays you over
+                            time in bill credits, HRS pays you upfront as a
+                            rebate.
                         </p>
                     </div>
 
