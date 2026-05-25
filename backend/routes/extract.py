@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from typing import Optional
 
@@ -16,6 +17,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/extract-bill", tags=["extract"])
+log = logging.getLogger("extract")
 
 MAX_BYTES = 10 * 1024 * 1024
 ALLOWED_MIME = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
@@ -29,15 +31,13 @@ class ExtractedBill(BaseModel):
     total_kwh_this_period: Optional[float] = None
     monthly_history_kwh: Optional[list[float]] = Field(
         None,
-        description="12 kWh values indexed by calendar month (0=Jan, 11=Dec).",
+        description="12 kWh values in the order they appear on the bill (oldest first).",
     )
     on_peak_kwh: Optional[float] = None
     mid_peak_kwh: Optional[float] = None
     off_peak_kwh: Optional[float] = None
 
 
-# Strict JSON Schema for OpenAI structured output.
-# Every property must appear in `required` (use null where unknown).
 BILL_JSON_SCHEMA = {
     "name": "ontario_hydro_bill",
     "strict": True,
@@ -84,25 +84,15 @@ Field rules:
 - total_kwh_this_period: kWh consumed in the current billing period.
   If TOU, this is on_peak + mid_peak + off_peak. Numeric only.
 
-- monthly_history_kwh: Ontario hydro bills nearly always include a 12-month
-  history chart somewhere on the bill (often a small bar graph on page 1 or 2,
-  or a labeled table). LOOK CAREFULLY for it. Read each bar / cell precisely.
-  Return EXACTLY 12 numbers INDEXED BY CALENDAR MONTH:
-      index 0 = January, 1 = February, 2 = March, ..., 11 = December.
-  Each bar on the bill has a READ DATE next to it (e.g. "31 Jan 26",
-  "01 Jan 26"). Use the MONTH of the read date to decide which slot the
-  value goes into. Year doesn't matter — only the month name. So a row
-  labeled "31 Jan 26" goes into slot 0 (January), "15 Aug 25" goes into
-  slot 7 (August), etc.
-  If two readings fall in the same calendar month, SUM them. If a calendar
-  month has no reading on the bill, use 0 for that slot.
-  Only return null if there is no monthly history on the bill at all.
+- monthly_history_kwh: if the bill shows a 12-month history chart (bars or
+  table), read each value precisely and return them OLDEST to NEWEST in the
+  order they appear on the chart (left-to-right or top-to-bottom).
+  Return null if you genuinely cannot find any history chart on the bill.
+  Do not invent values. Only return what you can clearly read.
 
 - on_peak_kwh / mid_peak_kwh / off_peak_kwh: if the bill shows a TOU usage
-  breakdown for the current period (most Ontario bills do — typically labeled
-  "On-Peak", "Mid-Peak", "Off-Peak" with kWh values), extract each.
-  These three should sum to roughly total_kwh_this_period.
-  If the bill is Tiered or doesn't show TOU breakdown: all three null.
+  breakdown for the current period (typically labeled "On-Peak", "Mid-Peak",
+  "Off-Peak" with kWh values), extract each. Otherwise all three null.
 
 - Any field you can't read confidently: return null. Do not guess.
 - Return JSON matching the supplied schema exactly. No prose.
@@ -132,10 +122,7 @@ async def extract_bill(file: UploadFile = File(...)) -> ExtractedBill:
 
     openai_key = os.environ.get("OPENAI_API_KEY")
     if not openai_key:
-        raise HTTPException(
-            status_code=500,
-            detail="OPENAI_API_KEY not configured on the server.",
-        )
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured.")
 
     client = OpenAI(api_key=openai_key)
     try:
@@ -172,4 +159,5 @@ async def extract_bill(file: UploadFile = File(...)) -> ExtractedBill:
             detail=f"Model returned non-JSON: {e}. Raw: {content[:300]}",
         )
 
+    log.info("extract: response = %s", json.dumps(parsed)[:1500])
     return ExtractedBill(**parsed)
