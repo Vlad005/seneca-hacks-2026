@@ -11,6 +11,8 @@ import {
 } from "@/lib/usage-defaults";
 import { MonthlyUsageChart } from "@/components/MonthlyUsageChart";
 import { DailySplitChart } from "@/components/DailySplitChart";
+import { Wordmark } from "@/components/ui/Wordmark";
+import { Button } from "@/components/ui/Button";
 
 export default function ConfirmPage() {
   const router = useRouter();
@@ -33,7 +35,10 @@ export default function ConfirmPage() {
     setHydrated(true);
   }, [router]);
 
-  const monthLabels = CALENDAR_MONTH_LABELS as unknown as string[];
+  const monthLabels = useMemo(
+    () => CALENDAR_MONTH_LABELS as unknown as string[],
+    [],
+  );
 
   const monthlyTotal = useMemo(
     () => monthly.reduce((a, b) => a + b, 0),
@@ -43,9 +48,9 @@ export default function ConfirmPage() {
 
   if (!hydrated || !bill) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-12">
-        <p className="text-sm text-neutral-500">Loading…</p>
-      </main>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-[var(--muted)]">Loading…</p>
+      </div>
     );
   }
 
@@ -64,83 +69,101 @@ export default function ConfirmPage() {
   };
 
   return (
-    <main className="flex flex-1 flex-col items-center px-4 py-10 sm:px-6">
-      <div className="w-full max-w-3xl space-y-8">
-        <header>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Does this match your usage?
-          </h1>
-          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
-            We pulled these from your bill. Drag the bars or handles to match your real pattern.
-          </p>
-        </header>
+    <div className="flex min-h-screen flex-col">
+      <header className="flex items-center justify-between px-6 py-6 sm:px-10">
+        <Wordmark />
+        <Button variant="ghost" href="/upload">
+          Re-upload
+        </Button>
+      </header>
 
-        {/* Address card */}
-        <section className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Your roof
-          </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_140px_140px]">
-            <input
-              type="text"
-              value={bill.service_address ?? ""}
-              onChange={(e) => updateAddressField("service_address", e.target.value || null)}
-              placeholder="Street address"
-              className={inputClasses}
-            />
-            <input
-              type="text"
-              value={bill.city ?? ""}
-              onChange={(e) => updateAddressField("city", e.target.value || null)}
-              placeholder="City"
-              className={inputClasses}
-            />
-            <input
-              type="text"
-              value={bill.postal_code ?? ""}
-              onChange={(e) => updateAddressField("postal_code", e.target.value || null)}
-              placeholder="Postal"
-              className={inputClasses}
-            />
+      <main className="flex flex-1 flex-col items-center px-4 pb-16 sm:px-6">
+        <div className="w-full max-w-3xl space-y-12">
+          <div>
+            <p className="eyebrow mb-3">Step two</p>
+            <h1 className="text-4xl font-semibold tracking-[-0.02em]">
+              Make this match your home
+            </h1>
+            <p className="mt-3 max-w-xl text-[15px] text-[var(--muted)]">
+              We pulled these from your bill. Adjust anything that doesn&apos;t
+              match — the simulation runs on these numbers.
+            </p>
           </div>
-        </section>
 
-        {/* Monthly bars */}
-        <section className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
-          <MonthlyUsageChart
-            values={monthly}
-            labels={monthLabels}
-            onChange={setMonthly}
-          />
-        </section>
+          <Section title="Address" hint="Where we'll model the roof.">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px_140px]">
+              <input
+                type="text"
+                value={bill.service_address ?? ""}
+                onChange={(e) => updateAddressField("service_address", e.target.value || null)}
+                placeholder="Street address"
+                className={inputClasses}
+              />
+              <input
+                type="text"
+                value={bill.city ?? ""}
+                onChange={(e) => updateAddressField("city", e.target.value || null)}
+                placeholder="City"
+                className={inputClasses}
+              />
+              <input
+                type="text"
+                value={bill.postal_code ?? ""}
+                onChange={(e) => updateAddressField("postal_code", e.target.value || null)}
+                placeholder="Postal"
+                className={inputClasses}
+              />
+            </div>
+          </Section>
 
-        {/* Daily split */}
-        <section className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
-          <DailySplitChart
-            split={split}
-            dailyKwh={avgDailyKwh}
-            onChange={setSplit}
-          />
-        </section>
+          <Section title="Monthly usage">
+            <MonthlyUsageChart
+              values={monthly}
+              labels={monthLabels}
+              onChange={setMonthly}
+            />
+          </Section>
 
-        <div className="flex justify-between pt-2">
-          <button
-            onClick={() => router.push("/upload")}
-            className="rounded-full px-5 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-          >
-            ← Re-upload
-          </button>
-          <button
-            onClick={onContinue}
-            className="rounded-full bg-amber-500 px-6 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600"
-          >
-            Looks right →
-          </button>
+          <Section title="When you use power">
+            <DailySplitChart
+              split={split}
+              dailyKwh={avgDailyKwh}
+              onChange={setSplit}
+            />
+          </Section>
+
+          <div className="flex justify-end pt-2">
+            <Button arrow onClick={onContinue}>
+              Looks right
+            </Button>
+          </div>
         </div>
+      </main>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8">
+      <div className="mb-5 flex items-baseline justify-between gap-4">
+        <h2 className="text-lg font-semibold tracking-[-0.01em]">{title}</h2>
+        {hint && (
+          <p className="text-xs text-[var(--subtle)]">{hint}</p>
+        )}
       </div>
-    </main>
+      {children}
+    </section>
   );
 }
 
 const inputClasses =
-  "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:ring-amber-900";
+  "w-full rounded-xl border border-[var(--border)] bg-transparent px-3.5 py-2.5 text-[15px] text-[var(--foreground)] outline-none transition focus:border-[var(--ink)] placeholder:text-[var(--subtle)]";

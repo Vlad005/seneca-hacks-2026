@@ -3,16 +3,16 @@
 import { useRef, useState } from "react";
 
 interface Props {
-  values: number[]; // exactly 12
-  labels: string[]; // exactly 12 (e.g. "Jun '25")
+  values: number[];
+  labels: string[];
   onChange: (next: number[]) => void;
 }
 
 const WIDTH = 720;
 const HEIGHT = 280;
-const PAD_TOP = 24;
+const PAD_TOP = 28;
 const PAD_BOTTOM = 44;
-const PAD_X = 28;
+const PAD_X = 16;
 const CHART_H = HEIGHT - PAD_TOP - PAD_BOTTOM;
 
 export function MonthlyUsageChart({ values, labels, onChange }: Props) {
@@ -20,12 +20,13 @@ export function MonthlyUsageChart({ values, labels, onChange }: Props) {
   const draggingRef = useRef<number | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const maxRaw = Math.max(...values, 100);
-  const max = Math.max(Math.ceil(maxRaw / 100) * 100, 100) * 1.15;
+  const max = Math.max(Math.ceil(maxRaw / 100) * 100, 100) * 1.18;
   const innerW = WIDTH - PAD_X * 2;
   const slot = innerW / 12;
-  const barW = slot * 0.68;
+  const barW = slot * 0.62;
 
   const yFor = (v: number) => PAD_TOP + CHART_H - (v / max) * CHART_H;
 
@@ -69,26 +70,27 @@ export function MonthlyUsageChart({ values, labels, onChange }: Props) {
     setEditingIdx(null);
   };
 
-  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
-    y: PAD_TOP + CHART_H * (1 - p),
-    label: Math.round(max * p),
-  }));
-
   const total = values.reduce((a, b) => a + b, 0);
   const avg = Math.round(total / 12);
 
   return (
     <div className="w-full">
-      <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-          Monthly usage (kWh)
-        </h3>
-        <div className="text-xs text-neutral-500">
-          12-month total <span className="font-semibold text-neutral-800 dark:text-neutral-200">{total.toLocaleString()}</span>
-          {" · "}avg <span className="font-semibold text-neutral-800 dark:text-neutral-200">{avg.toLocaleString()}</span>/mo
+      <div className="mb-4 flex items-end justify-between gap-6">
+        <div>
+          <div className="text-3xl font-semibold tracking-tight tabular-nums">
+            {total.toLocaleString()}
+            <span className="ml-1.5 text-base font-normal text-[var(--muted)]">kWh</span>
+          </div>
+          <div className="mt-1 text-xs text-[var(--subtle)]">
+            Annual total · {avg.toLocaleString()} kWh / month average
+          </div>
         </div>
+        <p className="hidden text-xs text-[var(--subtle)] sm:block">
+          Drag a bar, or click its number.
+        </p>
       </div>
-      <div className="relative w-full" style={{ aspectRatio: `${WIDTH} / ${HEIGHT + 30}` }}>
+
+      <div className="relative w-full" style={{ aspectRatio: `${WIDTH} / ${HEIGHT}` }}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -99,39 +101,28 @@ export function MonthlyUsageChart({ values, labels, onChange }: Props) {
           onPointerCancel={onPointerUp}
           style={{ touchAction: "none", userSelect: "none" }}
         >
-          {/* gridlines */}
-          {gridLines.map((g, i) => (
-            <g key={i}>
-              <line
-                x1={PAD_X}
-                x2={WIDTH - PAD_X}
-                y1={g.y}
-                y2={g.y}
-                stroke="currentColor"
-                strokeOpacity={0.08}
-                strokeDasharray="3 4"
-              />
-              <text
-                x={PAD_X - 6}
-                y={g.y + 3}
-                textAnchor="end"
-                fontSize="10"
-                fill="currentColor"
-                fillOpacity={0.4}
-              >
-                {g.label}
-              </text>
-            </g>
-          ))}
+          {/* baseline */}
+          <line
+            x1={PAD_X}
+            x2={WIDTH - PAD_X}
+            y1={PAD_TOP + CHART_H}
+            y2={PAD_TOP + CHART_H}
+            stroke="currentColor"
+            strokeOpacity={0.18}
+          />
 
           {values.map((v, i) => {
             const cx = PAD_X + slot * (i + 0.5);
             const x = cx - barW / 2;
             const y = yFor(v);
             const h = PAD_TOP + CHART_H - y;
+            const isHover = hoverIdx === i;
             return (
-              <g key={i}>
-                {/* hit target — slightly wider invisible rect for easier grabbing */}
+              <g
+                key={i}
+                onPointerEnter={() => setHoverIdx(i)}
+                onPointerLeave={() => setHoverIdx(null)}
+              >
                 <rect
                   x={cx - slot / 2}
                   y={PAD_TOP}
@@ -146,67 +137,47 @@ export function MonthlyUsageChart({ values, labels, onChange }: Props) {
                   y={y}
                   width={barW}
                   height={h}
-                  rx={3}
-                  fill="#f59e0b"
-                  fillOpacity={0.9}
+                  rx={4}
+                  fill="var(--accent)"
+                  fillOpacity={isHover ? 1 : 0.92}
                   onPointerDown={onPointerDown(i)}
                   style={{ cursor: "ns-resize" }}
                 />
-                {/* drag handle nub */}
-                <line
-                  x1={x + barW * 0.2}
-                  x2={x + barW * 0.8}
-                  y1={y + 4}
-                  y2={y + 4}
-                  stroke="white"
-                  strokeWidth={1.5}
-                  strokeOpacity={0.7}
-                  pointerEvents="none"
-                />
-                {/* value label */}
+                {/* value: only on hover or when wide enough */}
                 <text
                   x={cx}
-                  y={Math.max(y - 6, PAD_TOP - 4)}
+                  y={Math.max(y - 8, PAD_TOP - 2)}
                   textAnchor="middle"
                   fontSize="11"
                   fontWeight="600"
                   fill="currentColor"
+                  fillOpacity={isHover ? 1 : 0.85}
                   onClick={() => startEdit(i)}
                   style={{ cursor: "text" }}
                 >
                   {Math.round(v)}
                 </text>
-                {/* month label */}
                 <text
                   x={cx}
-                  y={HEIGHT - PAD_BOTTOM + 16}
+                  y={HEIGHT - PAD_BOTTOM + 18}
                   textAnchor="middle"
-                  fontSize="10"
+                  fontSize="11"
                   fill="currentColor"
-                  fillOpacity={0.6}
+                  fillOpacity={0.5}
+                  letterSpacing="0.04em"
                 >
                   {labels[i]}
                 </text>
               </g>
             );
           })}
-
-          {/* baseline */}
-          <line
-            x1={PAD_X}
-            x2={WIDTH - PAD_X}
-            y1={PAD_TOP + CHART_H}
-            y2={PAD_TOP + CHART_H}
-            stroke="currentColor"
-            strokeOpacity={0.3}
-          />
         </svg>
 
         {editingIdx !== null && (
-          <div
-            className="absolute -top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 shadow-sm dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <span className="text-xs text-neutral-500">{labels[editingIdx]}</span>
+          <div className="absolute -top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-sm">
+            <span className="text-xs text-[var(--subtle)]">
+              {labels[editingIdx]}
+            </span>
             <input
               autoFocus
               type="number"
@@ -217,15 +188,12 @@ export function MonthlyUsageChart({ values, labels, onChange }: Props) {
                 if (e.key === "Escape") setEditingIdx(null);
               }}
               onBlur={commitEdit}
-              className="w-24 rounded border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              className="w-24 rounded-md border border-[var(--border)] bg-transparent px-2 py-1 text-sm outline-none focus:border-[var(--ink)]"
             />
-            <span className="text-xs text-neutral-500">kWh</span>
+            <span className="text-xs text-[var(--subtle)]">kWh</span>
           </div>
         )}
       </div>
-      <p className="mt-2 text-xs text-neutral-500">
-        Drag a bar to adjust. Click the number above to type a value.
-      </p>
     </div>
   );
 }

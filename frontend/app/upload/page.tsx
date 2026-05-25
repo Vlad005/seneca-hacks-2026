@@ -4,14 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, extractBill } from "@/lib/api";
 import { saveBill } from "@/lib/storage";
+import { Wordmark } from "@/components/ui/Wordmark";
+import { Button } from "@/components/ui/Button";
 
 type Phase = "idle" | "selected" | "uploading" | "error";
 
 const PROCESSING_STAGES = [
-  "Reading your bill…",
-  "Pulling your address…",
-  "Looking up your usage…",
-  "Almost there…",
+  "Reading your bill",
+  "Pulling your address",
+  "Looking up your usage",
+  "Almost there",
 ];
 
 const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -27,7 +29,6 @@ export default function UploadPage() {
   const [stageIdx, setStageIdx] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Rotate processing-stage copy while the request is in flight.
   useEffect(() => {
     if (phase !== "uploading") return;
     setStageIdx(0);
@@ -37,7 +38,6 @@ export default function UploadPage() {
     return () => window.clearInterval(id);
   }, [phase]);
 
-  // Tidy up object URL on unmount or when file changes.
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -46,12 +46,12 @@ export default function UploadPage() {
 
   const accept = (f: File) => {
     if (!ACCEPTED.includes(f.type)) {
-      setError(`Unsupported file type ${f.type || "(unknown)"}. Use JPG, PNG, or WEBP.`);
+      setError(`That format isn't supported. Use JPG, PNG, or WEBP.`);
       setPhase("error");
       return;
     }
     if (f.size > MAX_MB * 1024 * 1024) {
-      setError(`File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Limit is ${MAX_MB} MB.`);
+      setError(`File is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Limit is ${MAX_MB} MB.`);
       setPhase("error");
       return;
     }
@@ -85,10 +85,10 @@ export default function UploadPage() {
     } catch (e) {
       const msg =
         e instanceof ApiError
-          ? `Server returned ${e.status}: ${e.message}`
+          ? e.message
           : e instanceof Error
             ? e.message
-            : "Unknown error";
+            : "Something went wrong reading the bill.";
       setError(msg);
       setPhase("error");
     }
@@ -104,52 +104,37 @@ export default function UploadPage() {
   };
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center px-6 py-12">
-      <div className="w-full max-w-xl">
-        <h1 className="mb-2 text-3xl font-semibold tracking-tight">
-          Upload your bill
-        </h1>
-        <p className="mb-8 text-sm text-neutral-600 dark:text-neutral-300">
-          JPG, PNG, or WEBP. We&apos;ll read the address and usage and never store the image.
-        </p>
+    <div className="flex min-h-screen flex-col">
+      <header className="flex items-center justify-between px-6 py-6 sm:px-10">
+        <Wordmark />
+      </header>
 
-        {phase === "uploading" ? (
-          <ProcessingView stage={PROCESSING_STAGES[stageIdx]} />
-        ) : (
-          <>
-            <div
-              onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={onDrop}
-              className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-12 text-center transition ${
-                isDragging
-                  ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
-                  : "border-neutral-300 hover:border-neutral-400 dark:border-neutral-700 dark:hover:border-neutral-600"
-              }`}
-            >
-              {previewUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={previewUrl}
-                  alt="Bill preview"
-                  className="max-h-72 rounded-lg object-contain"
-                />
-              ) : (
-                <>
-                  <div className="text-4xl">📷</div>
-                  <div className="text-base font-medium">
-                    Drop your bill photo here
-                  </div>
-                  <div className="text-sm text-neutral-500">
-                    or click to pick a file
-                  </div>
-                </>
-              )}
-            </div>
+      <main className="flex flex-1 items-start justify-center px-6 pb-16 pt-4 sm:pt-8">
+        <div className="w-full max-w-xl">
+          <p className="eyebrow mb-3">Step one</p>
+          <h1 className="text-4xl font-semibold tracking-[-0.02em]">
+            Upload your bill
+          </h1>
+          <p className="mt-3 text-[15px] text-[var(--muted)]">
+            We&apos;ll pull your address and monthly usage. The image stays in this session only.
+          </p>
+
+          <div className="mt-10">
+            {phase === "uploading" ? (
+              <ProcessingView stage={PROCESSING_STAGES[stageIdx]} />
+            ) : (
+              <DropZone
+                isDragging={isDragging}
+                previewUrl={previewUrl}
+                onClick={() => inputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={onDrop}
+              />
+            )}
 
             <input
               ref={inputRef}
@@ -160,64 +145,162 @@ export default function UploadPage() {
               onChange={onPick}
             />
 
-            {file && (
-              <div className="mt-4 flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-                <div className="truncate">
-                  <span className="font-medium">{file.name}</span>{" "}
-                  <span className="text-neutral-500">
-                    ({(file.size / 1024 / 1024).toFixed(1)} MB)
+            {phase !== "uploading" && file && (
+              <div className="mt-4 flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm">
+                <div className="min-w-0 truncate">
+                  <span className="font-medium">{file.name}</span>
+                  <span className="ml-2 text-[var(--subtle)]">
+                    {(file.size / 1024 / 1024).toFixed(1)} MB
                   </span>
                 </div>
                 <button
                   onClick={reset}
-                  className="ml-3 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  className="ml-3 shrink-0 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
                 >
                   Remove
                 </button>
               </div>
             )}
 
-            {error && (
-              <div className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+            {phase !== "uploading" && error && (
+              <div className="mt-4 rounded-2xl border border-red-200/60 bg-red-50/80 px-4 py-3 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
                 {error}
               </div>
             )}
 
-            <div className="mt-8 flex justify-end gap-3">
-              <button
-                onClick={() => router.push("/")}
-                className="rounded-full px-5 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submit}
-                disabled={!file}
-                className="rounded-full bg-amber-500 px-6 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-neutral-300 dark:disabled:bg-neutral-700"
-              >
-                Process bill →
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </main>
+            {phase !== "uploading" && (
+              <div className="mt-10 flex justify-between">
+                <Button variant="ghost" href="/">
+                  Cancel
+                </Button>
+                <Button
+                  arrow
+                  onClick={submit}
+                  disabled={!file}
+                >
+                  Continue
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+interface DropZoneProps {
+  isDragging: boolean;
+  previewUrl: string | null;
+  onClick: () => void;
+  onDragOver: React.DragEventHandler<HTMLDivElement>;
+  onDragLeave: () => void;
+  onDrop: React.DragEventHandler<HTMLDivElement>;
+}
+
+function DropZone({
+  isDragging,
+  previewUrl,
+  onClick,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: DropZoneProps) {
+  return (
+    <div
+      onClick={onClick}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border bg-[var(--card)] p-14 text-center transition ${
+        isDragging
+          ? "border-[var(--accent)] bg-emerald-50/70 dark:bg-emerald-950/20"
+          : "border-[var(--border)] hover:border-[var(--muted)]"
+      }`}
+    >
+      {previewUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={previewUrl}
+          alt="Bill preview"
+          className="max-h-72 rounded-xl object-contain"
+        />
+      ) : (
+        <>
+          <UploadGlyph />
+          <div className="mt-3 text-[15px] font-medium text-[var(--foreground)]">
+            Drop your bill here
+          </div>
+          <div className="text-sm text-[var(--muted)]">
+            or click to pick a file
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function UploadGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="28"
+      height="28"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-[var(--muted)]"
+      aria-hidden
+    >
+      <rect x="3" y="5" width="18" height="14" rx="3" />
+      <path d="M3 16l4-4a2 2 0 0 1 2.83 0L14 16" />
+      <path d="M14 14l1.5-1.5a2 2 0 0 1 2.83 0L21 15" />
+      <circle cx="16" cy="9" r="1.3" />
+    </svg>
   );
 }
 
 function ProcessingView({ stage }: { stage: string }) {
   return (
-    <div className="flex flex-col items-center gap-6 rounded-2xl border border-neutral-200 px-8 py-16 dark:border-neutral-800">
-      <div
-        className="h-12 w-12 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500"
-        aria-hidden
-      />
+    <div className="flex flex-col items-center gap-5 rounded-3xl border border-[var(--border)] bg-[var(--card)] px-8 py-20">
+      <Spinner />
       <div className="text-center">
-        <div className="mb-1 text-lg font-medium">{stage}</div>
-        <div className="text-xs text-neutral-500">
-          Textract + GPT-4o-mini · usually 3–8 seconds
+        <div className="text-[15px] font-medium">{stage}</div>
+        <div className="mt-1 text-xs text-[var(--subtle)]">
+          Usually 3 to 8 seconds
         </div>
       </div>
     </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg
+      viewBox="0 0 50 50"
+      width="40"
+      height="40"
+      className="animate-spin text-[var(--muted)]"
+      aria-hidden
+    >
+      <circle
+        cx="25"
+        cy="25"
+        r="20"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.18"
+        strokeWidth="4"
+      />
+      <path
+        d="M25 5 a20 20 0 0 1 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

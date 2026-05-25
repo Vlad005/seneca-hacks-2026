@@ -5,40 +5,33 @@ import type { UsageProfile } from "@/lib/types";
 
 interface Props {
   split: UsageProfile["daily_split"];
-  /** Approx kWh per day, just for the label tooltip. */
+  /** Approx kWh per day, for the headline number. */
   dailyKwh: number;
   onChange: (next: UsageProfile["daily_split"]) => void;
 }
 
 type SegmentKey = keyof UsageProfile["daily_split"];
 
-const SEGMENTS: { key: SegmentKey; label: string; hours: string; color: string; period: "off" | "mid" | "on" }[] = [
-  { key: "night", label: "Night", hours: "11pm – 6am", color: "#1e3a8a", period: "off" },
-  { key: "morning", label: "Morning", hours: "6am – 11am", color: "#dc2626", period: "on" },
-  { key: "day", label: "Day", hours: "11am – 5pm", color: "#f59e0b", period: "mid" },
-  { key: "evening", label: "Evening", hours: "5pm – 11pm", color: "#7c2d12", period: "on" },
+const SEGMENTS: { key: SegmentKey; label: string; hours: string; tint: string }[] = [
+  { key: "night",   label: "Night",   hours: "11pm – 6am", tint: "#1c1917" },
+  { key: "morning", label: "Morning", hours: "6am – 11am", tint: "#44403c" },
+  { key: "day",     label: "Day",     hours: "11am – 5pm", tint: "#78716c" },
+  { key: "evening", label: "Evening", hours: "5pm – 11pm", tint: "#a8a29e" },
 ];
 
-const PERIOD_LABEL: Record<"off" | "mid" | "on", string> = {
-  off: "Off-peak",
-  mid: "Mid-peak",
-  on: "On-peak",
-};
-
 const WIDTH = 720;
-const HEIGHT = 80;
-const PAD_X = 12;
+const HEIGHT = 96;
+const PAD_X = 0;
 const INNER_W = WIDTH - PAD_X * 2;
-const MIN_FRAC = 0.02;
+const MIN_FRAC = 0.03;
 
 export function DailySplitChart({ split, dailyKwh, onChange }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const draggingRef = useRef<number | null>(null); // 0..2 = divider index between segments
+  const draggingRef = useRef<number | null>(null);
 
   const order: SegmentKey[] = SEGMENTS.map((s) => s.key);
   const fracs = order.map((k) => split[k]);
 
-  // Cumulative x positions in [0, 1] for each divider — there are 3 dividers.
   const cumulative: number[] = [];
   let acc = 0;
   for (let i = 0; i < fracs.length - 1; i++) {
@@ -58,7 +51,6 @@ export function DailySplitChart({ split, dailyKwh, onChange }: Props) {
     const xPx = ((e.clientX - rect.left) / rect.width) * WIDTH;
     const xFrac = Math.max(0, Math.min(1, (xPx - PAD_X) / INNER_W));
 
-    // Compute neighbours' floor/ceiling so neither shrinks below MIN_FRAC.
     const leftBoundary = d === 0 ? 0 : cumulative[d - 1];
     const rightBoundary = d === fracs.length - 2 ? 1 : cumulative[d + 1];
     const minPos = leftBoundary + MIN_FRAC;
@@ -66,18 +58,15 @@ export function DailySplitChart({ split, dailyKwh, onChange }: Props) {
     const clamped = Math.max(minPos, Math.min(maxPos, xFrac));
 
     const nextFracs = fracs.slice();
-    const oldLeftFrac = clamped - leftBoundary;
-    const oldRightFrac = rightBoundary - clamped;
-    nextFracs[d] = oldLeftFrac;
-    nextFracs[d + 1] = oldRightFrac;
+    nextFracs[d] = clamped - leftBoundary;
+    nextFracs[d + 1] = rightBoundary - clamped;
 
-    const nextSplit: UsageProfile["daily_split"] = {
+    onChange({
       night: nextFracs[0],
       morning: nextFracs[1],
       day: nextFracs[2],
       evening: nextFracs[3],
-    };
-    onChange(nextSplit);
+    });
   };
 
   const onPointerUp = (e: React.PointerEvent<SVGElement>) => {
@@ -86,21 +75,21 @@ export function DailySplitChart({ split, dailyKwh, onChange }: Props) {
     draggingRef.current = null;
   };
 
-  // Aggregate by TOU period for the secondary readout below the bar.
-  const periodTotals = { off: 0, mid: 0, on: 0 };
-  SEGMENTS.forEach((s, i) => {
-    periodTotals[s.period] += fracs[i];
-  });
-
   return (
     <div className="w-full">
-      <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-          Daily usage by time-of-day
-        </h3>
-        <div className="text-xs text-neutral-500">
-          ≈ <span className="font-semibold text-neutral-800 dark:text-neutral-200">{Math.round(dailyKwh)}</span> kWh / day
+      <div className="mb-4 flex items-end justify-between gap-6">
+        <div>
+          <div className="text-3xl font-semibold tracking-tight tabular-nums">
+            {Math.round(dailyKwh)}
+            <span className="ml-1.5 text-base font-normal text-[var(--muted)]">kWh / day</span>
+          </div>
+          <div className="mt-1 text-xs text-[var(--subtle)]">
+            How a typical day breaks down
+          </div>
         </div>
+        <p className="hidden text-xs text-[var(--subtle)] sm:block">
+          Drag the handles between segments.
+        </p>
       </div>
 
       <svg
@@ -119,37 +108,44 @@ export function DailySplitChart({ split, dailyKwh, onChange }: Props) {
           const x = PAD_X + startFrac * INNER_W;
           const w = Math.max(0, (endFrac - startFrac) * INNER_W);
           const pct = Math.round(fracs[i] * 100);
+          const isFirst = i === 0;
+          const isLast = i === SEGMENTS.length - 1;
+          const isWide = w > 60;
           return (
             <g key={seg.key}>
-              <rect x={x} y={20} width={w} height={36} fill={seg.color} rx={4} />
-              {w > 48 && (
+              <path
+                d={segmentPath(x, 28, w, 44, 10, isFirst, isLast)}
+                fill={seg.tint}
+              />
+              {isWide && (
                 <>
                   <text
-                    x={x + w / 2}
-                    y={42}
-                    textAnchor="middle"
-                    fontSize="13"
-                    fontWeight="600"
-                    fill="white"
-                  >
-                    {pct}%
-                  </text>
-                  <text
-                    x={x + w / 2}
-                    y={14}
-                    textAnchor="middle"
+                    x={x + 12}
+                    y={20}
                     fontSize="11"
                     fill="currentColor"
+                    fillOpacity={0.85}
+                    fontWeight="500"
                   >
                     {seg.label}
                   </text>
                   <text
-                    x={x + w / 2}
-                    y={72}
-                    textAnchor="middle"
-                    fontSize="10"
+                    x={x + w - 12}
+                    y={20}
+                    textAnchor="end"
+                    fontSize="11"
                     fill="currentColor"
                     fillOpacity={0.55}
+                    style={{ fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {pct}%
+                  </text>
+                  <text
+                    x={x + 12}
+                    y={88}
+                    fontSize="10"
+                    fill="currentColor"
+                    fillOpacity={0.45}
                   >
                     {seg.hours}
                   </text>
@@ -167,43 +163,40 @@ export function DailySplitChart({ split, dailyKwh, onChange }: Props) {
               onPointerDown={onPointerDown(i)}
               style={{ cursor: "ew-resize" }}
             >
-              <rect x={x - 8} y={16} width={16} height={44} fill="transparent" />
-              <line
-                x1={x}
-                x2={x}
-                y1={18}
-                y2={58}
-                stroke="white"
-                strokeWidth={2}
-              />
-              <circle cx={x} cy={38} r={6} fill="white" stroke="#525252" strokeWidth={1.5} />
+              <rect x={x - 10} y={24} width={20} height={52} fill="transparent" />
+              <line x1={x} x2={x} y1={32} y2={68} stroke="white" strokeWidth={2} strokeOpacity={0.9} />
             </g>
           );
         })}
       </svg>
-
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {(["on", "mid", "off"] as const).map((p) => (
-          <div key={p} className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{
-                background:
-                  p === "on" ? "#dc2626" : p === "mid" ? "#f59e0b" : "#1e3a8a",
-              }}
-            />
-            <span className="text-neutral-500">{PERIOD_LABEL[p]}</span>
-            <span className="font-semibold tabular-nums">
-              {Math.round(periodTotals[p] * 100)}%
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-2 text-xs text-neutral-500">
-        Drag the white handles to redistribute. On-peak hours map to Ontario&apos;s
-        winter TOU windows; mid- and off-peak follow the same schedule.
-      </p>
     </div>
   );
+}
+
+/** Rounded-corner pill segment. Only corners on the outer ends round. */
+function segmentPath(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  roundLeft: boolean,
+  roundRight: boolean,
+): string {
+  const rl = roundLeft ? r : 0;
+  const rr = roundRight ? r : 0;
+  return [
+    `M ${x + rl} ${y}`,
+    `L ${x + w - rr} ${y}`,
+    rr > 0 ? `A ${rr} ${rr} 0 0 1 ${x + w} ${y + rr}` : ``,
+    `L ${x + w} ${y + h - rr}`,
+    rr > 0 ? `A ${rr} ${rr} 0 0 1 ${x + w - rr} ${y + h}` : ``,
+    `L ${x + rl} ${y + h}`,
+    rl > 0 ? `A ${rl} ${rl} 0 0 1 ${x} ${y + h - rl}` : ``,
+    `L ${x} ${y + rl}`,
+    rl > 0 ? `A ${rl} ${rl} 0 0 1 ${x + rl} ${y}` : ``,
+    "Z",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
