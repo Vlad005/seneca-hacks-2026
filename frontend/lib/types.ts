@@ -38,3 +38,41 @@ export interface UsageProfile {
     evening: number;
   };
 }
+
+/** Shape of the /pv-analysis backend response. Mirrors backend Pydantic. */
+export interface PvAggregate {
+  annual_kwh: number;
+  monthly_kwh: number[]; // 12
+  daily_kwh: number[]; // 365
+  typical_day_hourly_kwh: number[]; // 24
+}
+
+export interface PvAnalysis {
+  system_kw: number;
+  panel_count: number;
+  usable_area_sqm: number;
+  tilt_deg: number;
+  azimuth_deg: number;
+  theoretical: PvAggregate;
+  actual: PvAggregate;
+  avg_realization_pct: number;
+  monthly_generation_kwh: number[];
+  typical_day_hourly_kwh: number[];
+  annual_kwh: number;
+}
+
+export interface CloudHistory {
+  lat: number;
+  lon: number;
+  years_averaged: number;
+  start: string;
+  end: string;
+  daily_cloud_cover_pct: (number | null)[]; // 365
+  annual_avg_pct: number;
+}
+
+export interface GeocodedAddress {
+  lat: number;
+  lon: number;
+  query: string;
+}

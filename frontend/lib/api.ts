@@ -1,4 +1,4 @@
-import type { ExtractedBill } from "./types";
+import type { CloudHistory, ExtractedBill, PvAnalysis } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
@@ -31,4 +31,61 @@ export async function extractBill(file: File): Promise<ExtractedBill> {
   }
 
   return (await res.json()) as ExtractedBill;
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data?.detail ?? detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as T;
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data?.detail ?? detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as T;
+}
+
+export function fetchPvAnalysis(
+  lat: number,
+  lon: number,
+  tz = "America/Toronto",
+): Promise<PvAnalysis> {
+  return postJson<PvAnalysis>("/pv-analysis", { lat, lon, tz });
+}
+
+export function fetchCloudHistory(
+  lat: number,
+  lon: number,
+  years = 5,
+  tz = "America/Toronto",
+): Promise<CloudHistory> {
+  const qs = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    years: String(years),
+    tz,
+  });
+  return getJson<CloudHistory>(`/cloud-history?${qs.toString()}`);
 }
