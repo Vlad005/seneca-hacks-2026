@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import mapboxgl from "mapbox-gl";
 import ShadeMap from "mapbox-gl-shadow-simulator";
@@ -11,11 +11,21 @@ import { geocodeAddress } from "@/lib/geocode";
 import {
     loadBill,
     loadGeo,
+    loadRebates,
+    loadUsage,
     saveAnalysis,
     saveCloud,
     saveGeo,
 } from "@/lib/storage";
-import type { CloudHistory, PvAnalysis } from "@/lib/types";
+import type {
+    CloudHistory,
+    ExtractedBill,
+    PvAnalysis,
+    RebateSelections,
+    UsageProfile,
+} from "@/lib/types";
+import { deriveResults } from "@/lib/derive-results";
+import { ResultsLayout } from "@/components/results/ResultsLayout";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const SHADEMAP_KEY = process.env.NEXT_PUBLIC_SHADEMAP_KEY ?? "";
@@ -59,17 +69,32 @@ export default function ResultsPage() {
     const [error, setError] = useState<string | null>(null);
     const [analysis, setAnalysis] = useState<PvAnalysis | null>(null);
     const [cloud, setCloud] = useState<CloudHistory | null>(null);
+    const [bill, setBill] = useState<ExtractedBill | null>(null);
+    const [usage, setUsage] = useState<UsageProfile | null>(null);
+    const [rebates, setRebates] = useState<RebateSelections | null>(null);
+
+    // When phase flips to results, the map container resizes via CSS;
+    // tell Mapbox to recompute its viewport so the canvas isn't squashed/stretched.
+    useEffect(() => {
+        if (phase !== "results" || !mapRef.current) return;
+        const t = window.setTimeout(() => mapRef.current?.resize(), 550);
+        return () => window.clearTimeout(t);
+    }, [phase]);
 
     useEffect(() => {
         phaseRef.current = phase;
     }, [phase]);
 
     useEffect(() => {
-        const bill = loadBill();
-        if (!bill) {
+        const loadedBill = loadBill();
+        if (!loadedBill) {
             router.replace("/upload");
             return;
         }
+        const bill = loadedBill;
+        setBill(loadedBill);
+        setUsage(loadUsage());
+        setRebates(loadRebates());
         let cancelled = false;
 
         (async () => {
@@ -278,51 +303,65 @@ export default function ResultsPage() {
     const progress = 1 - Math.exp(-elapsedSec / 4.5);
     const nightDim = nightOverlayOpacity(elapsedSec);
 
+    const derived = useMemo(() => {
+        if (!bill || !usage || !analysis) return null;
+        return deriveResults(bill, usage, analysis);
+    }, [bill, usage, analysis]);
+
+    const addressLine = useMemo(() => {
+        if (!bill) return "";
+        return [bill.service_address, bill.city]
+            .filter(Boolean)
+            .join(", ");
+    }, [bill]);
+
+    const meterChoice: "net-metering" | "hrs" =
+        rebates?.meterChoice ?? "net-metering";
+
+    const mapClasses =
+        phase === "loader"
+            ? "fixed top-0 left-0 z-0 h-screen w-screen"
+            : "fixed top-0 left-0 right-0 z-0 h-[45vh] lg:right-auto lg:h-screen lg:w-[38vw]";
+
     return (
-        <div className="relative h-screen w-screen overflow-hidden bg-[#0a1018]">
-            <div
-                ref={containerRef}
-                className="absolute inset-0"
-                style={{ width: "100%", height: "100%" }}
-            />
+        <div className="relative min-h-screen bg-[#0a1018]">
+            <div ref={containerRef} className={mapClasses} />
 
-            {/* Cinematic vignette so the loader card pops. */}
-            <div
-                aria-hidden
-                className={`pointer-events-none absolute inset-0 transition-opacity duration-700 ${
-                    phase === "loader" ? "opacity-100" : "opacity-30"
-                }`}
-                style={{
-                    background:
-                        "radial-gradient(ellipse at center, rgba(0,0,0,0) 20%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.78) 100%)",
-                }}
-            />
-
-            {/* Night dimmer — fades the actual map dark during the night beat,
-          does NOT touch the loader card (lives below it in z-order). */}
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0"
-                style={{
-                    background: "#020611",
-                    opacity: nightDim,
-                    transition: "opacity 300ms linear",
-                }}
-            />
-
+            {/* Loader-only overlays. */}
             {phase === "loader" && (
-                <LoaderCard
-                    items={itemStates}
-                    progressPct={Math.round(progress * 100)}
-                />
+                <>
+                    <div
+                        aria-hidden
+                        className="pointer-events-none fixed inset-0"
+                        style={{
+                            background:
+                                "radial-gradient(ellipse at center, rgba(0,0,0,0) 20%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.78) 100%)",
+                        }}
+                    />
+                    <div
+                        aria-hidden
+                        className="pointer-events-none fixed inset-0"
+                        style={{
+                            background: "#020611",
+                            opacity: nightDim,
+                            transition: "opacity 300ms linear",
+                        }}
+                    />
+                    <LoaderCard
+                        items={itemStates}
+                        progressPct={Math.round(progress * 100)}
+                    />
+                </>
             )}
 
-            {phase === "results" && analysis && (
-                <ResultsPlaceholder
-                    analysis={analysis}
-                    cloud={cloud}
-                    onBack={() => router.push("/rebates/extras")}
-                />
+            {phase === "results" && derived && (
+                <main className="relative z-0 bg-[var(--background)] pt-[45vh] lg:ml-[38vw] lg:pt-0">
+                    <ResultsLayout
+                        derived={derived}
+                        meterChoice={meterChoice}
+                        address={addressLine}
+                    />
+                </main>
             )}
 
             {phase === "error" && (
@@ -496,26 +535,14 @@ function highlightUserHouse(map: mapboxgl.Map, lon: number, lat: number): void {
             const src = map.getSource("user-house") as mapboxgl.GeoJSONSource;
             src.setData(data as never);
         }
-        if (!map.getLayer("user-house-glow")) {
+        if (!map.getLayer("user-house-fill")) {
             map.addLayer({
-                id: "user-house-glow",
-                type: "line",
+                id: "user-house-fill",
+                type: "fill",
                 source: "user-house",
                 paint: {
-                    "line-color": "#22d3ee",
-                    "line-width": 8,
-                    "line-blur": 8,
-                    "line-opacity": 0.55,
-                },
-            });
-            map.addLayer({
-                id: "user-house-line",
-                type: "line",
-                source: "user-house",
-                paint: {
-                    "line-color": "#a5f3fc",
-                    "line-width": 2,
-                    "line-opacity": 1,
+                    "fill-color": "#22d3ee",
+                    "fill-opacity": 0.4,
                 },
             });
         }
@@ -607,49 +634,6 @@ function CheckPill({ done }: { done: boolean }) {
                 <span className="h-1 w-1 rounded-full bg-[var(--subtle)]" />
             )}
         </span>
-    );
-}
-
-function ResultsPlaceholder({
-    analysis,
-    cloud,
-    onBack,
-}: {
-    analysis: PvAnalysis;
-    cloud: CloudHistory | null;
-    onBack: () => void;
-}) {
-    return (
-        <div className="absolute inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-8">
-            <div className="w-full max-w-2xl rounded-3xl border border-[var(--border)] bg-white p-6">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--subtle)]">
-                    Phase 2 complete · ready for Phase 3
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-[-0.01em] text-[var(--foreground)]">
-                    {Math.round(analysis.annual_kwh).toLocaleString()}
-                    <span className="ml-2 text-base font-normal text-[var(--muted)]">
-                        kWh per year
-                    </span>
-                </h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                    {analysis.system_kw} kW system · {analysis.panel_count}{" "}
-                    panels · {analysis.avg_realization_pct}% of theoretical
-                    sunlight reaches your roof
-                    {cloud
-                        ? ` · ${cloud.annual_avg_pct}% avg cloud cover (${cloud.years_averaged}yr)`
-                        : ""}
-                    .
-                </p>
-                <div className="mt-5 flex gap-3">
-                    <button
-                        onClick={onBack}
-                        className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--background)]"
-                    >
-                        Back
-                    </button>
-                </div>
-            </div>
-        </div>
     );
 }
 
