@@ -7,14 +7,6 @@ export default function Home() {
         <div className="flex min-h-screen flex-col">
             <header className="flex items-center justify-between px-5 py-5 sm:px-10 sm:py-7">
                 <Wordmark />
-                <nav className="flex items-center gap-1 text-sm">
-                    <Link
-                        href="/sandbox"
-                        className="rounded-full px-3 py-1.5 text-[var(--muted)] hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                        Shadow demo
-                    </Link>
-                </nav>
             </header>
 
             <main className="flex flex-1 flex-col px-5 pb-12 sm:px-10">
@@ -36,18 +28,7 @@ export default function Home() {
                             <Button href="/upload" arrow>
                                 Start with my bill
                             </Button>
-                            <Link
-                                href="/sandbox"
-                                className="rounded-full px-4 py-2.5 text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)]"
-                            >
-                                See the shadow demo
-                            </Link>
                         </div>
-
-                        <p className="mt-5 text-xs text-[var(--subtle)]">
-                            Phone camera or desktop drag &amp; drop. No account
-                            needed.
-                        </p>
                     </div>
 
                     {/* Hero image card */}

@@ -17,6 +17,11 @@ import {
 } from "recharts";
 import type { DerivedResults } from "@/lib/derive-results";
 import type { Customization } from "@/lib/customization";
+import {
+    OBSTRUCTION_FACTOR,
+    PITCH_MULTIPLIER,
+    SOUTH_HALF_FRACTION,
+} from "@/lib/roof-geometry";
 import { CustomizeModal } from "./CustomizeModal";
 
 interface Props {
@@ -65,7 +70,12 @@ export function ResultsLayout({
                         recomputing ? "opacity-40 transition-opacity" : ""
                     }
                 >
-                    {tab === "overview" && <OverviewTab derived={derived} />}
+                    {tab === "overview" && (
+                        <OverviewTab
+                            derived={derived}
+                            footprintSqm={footprintSqm}
+                        />
+                    )}
                     {tab === "data" && <DataTab derived={derived} />}
                     {tab === "readiness" && <ReadinessTab derived={derived} />}
                 </div>
@@ -207,20 +217,46 @@ function TabBar({
 
 /* ------------------------------ Overview tab ---------------------------- */
 
-function OverviewTab({ derived }: { derived: DerivedResults }) {
+function OverviewTab({
+    derived,
+    footprintSqm,
+}: {
+    derived: DerivedResults;
+    footprintSqm: number | null;
+}) {
     return (
         <>
-            <RoofGlanceSection derived={derived} />
+            <RoofGlanceSection
+                derived={derived}
+                footprintSqm={footprintSqm}
+            />
             <KeyNumbersSection derived={derived} />
         </>
     );
 }
 
-function RoofGlanceSection({ derived }: { derived: DerivedResults }) {
+function RoofGlanceSection({
+    derived,
+    footprintSqm,
+}: {
+    derived: DerivedResults;
+    footprintSqm: number | null;
+}) {
+    // Roof's actual usable area is a property of the building, not of how many
+    // panels the user happens to have configured. Compute from the detected
+    // footprint polygon so this number stays stable across customization.
+    const usableRoofSqm =
+        footprintSqm !== null
+            ? footprintSqm *
+              PITCH_MULTIPLIER *
+              SOUTH_HALF_FRACTION *
+              OBSTRUCTION_FACTOR
+            : derived.usableAreaSqm;
+
     const stats = [
         {
             label: "Usable roof",
-            value: `${Math.round(derived.usableAreaSqm)} m²`,
+            value: `${Math.round(usableRoofSqm)} m²`,
         },
         { label: "Panels", value: String(derived.panelCount) },
         { label: "System size", value: `${derived.systemKw.toFixed(1)} kW` },

@@ -89,6 +89,10 @@ Field rules:
   order they appear on the chart (left-to-right or top-to-bottom).
   Return null if you genuinely cannot find any history chart on the bill.
   Do not invent values. Only return what you can clearly read.
+  NEVER return 12 identical or near-identical numbers — if you can only see
+  one consumption figure (the current period total) and not a true monthly
+  history chart, return null. Filling the array with the same value 12 times
+  is forbidden.
 
 - on_peak_kwh / mid_peak_kwh / off_peak_kwh: if the bill shows a TOU usage
   breakdown for the current period (typically labeled "On-Peak", "Mid-Peak",
@@ -158,6 +162,21 @@ async def extract_bill(file: UploadFile = File(...)) -> ExtractedBill:
             status_code=502,
             detail=f"Model returned non-JSON: {e}. Raw: {content[:300]}",
         )
+
+    # Defensive check: the model occasionally hallucinates a uniform array
+    # (same value 12×) when it can't read a real history chart. Treat as a
+    # failed extraction so the frontend's seasonal fallback takes over.
+    hist = parsed.get("monthly_history_kwh")
+    if isinstance(hist, list) and len(hist) >= 2:
+        vals = [v for v in hist if v is not None]
+        if vals:
+            avg = sum(vals) / len(vals)
+            rng = max(vals) - min(vals)
+            if avg > 0 and (rng / avg) < 0.01:
+                log.info(
+                    "extract: dropping near-uniform monthly_history_kwh %r", hist
+                )
+                parsed["monthly_history_kwh"] = None
 
     log.info("extract: response = %s", json.dumps(parsed)[:1500])
     return ExtractedBill(**parsed)

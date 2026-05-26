@@ -5,15 +5,36 @@ export const CALENDAR_MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ] as const;
 
+/** Ontario residential seasonal multipliers — heating-dominant winter + AC
+ *  cooling-driven summer bump. Indexed Jan..Dec, sums to 12.00 so the mean
+ *  multiplier is 1.0 (i.e. seed × shape preserves the seed as the annual avg).
+ */
+const ONTARIO_SEASONAL_SHAPE = [
+  1.25, 1.20, 1.00, 0.85, 0.80, 0.85,
+  1.10, 1.10, 0.85, 0.85, 1.00, 1.15,
+] as const;
+
 /** Initial 12-month usage indexed by calendar month (0=Jan, 11=Dec). */
 export function initialMonthly(bill: ExtractedBill | null): number[] {
   const hist = bill?.monthly_history_kwh;
-  if (hist && hist.length === 12) {
+  if (hist && hist.length === 12 && hasMonthlyVariation(hist)) {
     return hist.map((v) => Math.max(0, Math.round(v)));
   }
-  // Fallback: flat at current-period kWh, or 800 if even that's missing.
+  // Fallback: scale the Ontario residential seasonal shape to the seed so
+  // months vary realistically instead of all reading identical.
   const seed = bill?.total_kwh_this_period ?? 800;
-  return Array(12).fill(Math.round(seed));
+  return ONTARIO_SEASONAL_SHAPE.map((mult) => Math.max(0, Math.round(seed * mult)));
+}
+
+/** True if the extracted history has at least 2% range relative to its mean —
+ *  guards against the GPT-4o-mini failure mode where the model fills the array
+ *  with 12 identical values when it can't actually read the chart.
+ */
+function hasMonthlyVariation(values: number[]): boolean {
+  const avg = values.reduce((a, b) => a + b, 0) / values.length;
+  if (avg <= 0) return false;
+  const range = Math.max(...values) - Math.min(...values);
+  return range / avg >= 0.02;
 }
 
 /** Initial daily split. Derived from on/mid/off-peak kWh if present, else defaults.
