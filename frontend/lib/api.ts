@@ -67,12 +67,23 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface RoofOverride {
+  tilt_deg?: number;
+  azimuth_deg?: number;
+  panel_count?: number;
+  panel_area_sqm?: number;
+  panel_efficiency_stc?: number;
+}
+
 export function fetchPvAnalysis(
   lat: number,
   lon: number,
+  roof?: RoofOverride | null,
   tz = "America/Toronto",
 ): Promise<PvAnalysis> {
-  return postJson<PvAnalysis>("/pv-analysis", { lat, lon, tz });
+  const body: Record<string, unknown> = { lat, lon, tz };
+  if (roof) body.roof = roof;
+  return postJson<PvAnalysis>("/pv-analysis", body);
 }
 
 export function fetchCloudHistory(

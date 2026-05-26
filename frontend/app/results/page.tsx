@@ -6,7 +6,16 @@ import mapboxgl from "mapbox-gl";
 import ShadeMap from "mapbox-gl-shadow-simulator";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-import { fetchCloudHistory, fetchPvAnalysis } from "@/lib/api";
+import {
+    fetchCloudHistory,
+    fetchPvAnalysis,
+    type RoofOverride,
+} from "@/lib/api";
+import {
+    extractOuterRing,
+    polygonAreaSqMeters,
+    roofFromFootprint,
+} from "@/lib/roof-geometry";
 import { geocodeAddress } from "@/lib/geocode";
 import {
     loadBill,
@@ -196,11 +205,69 @@ export default function ResultsPage() {
                     essential: true,
                 });
 
-                // 3) After the fly-in lands, find and highlight the user's house only.
-                map.once("moveend", () => {
+                // 3) After the fly-in lands, find the building, derive a
+                //    real roof config from its footprint, then fire /pv-analysis
+                //    with that config so the numbers reflect the actual roof.
+                map.once("moveend", async () => {
                     if (cancelled) return;
-                    highlightUserHouse(map, geo.lon, geo.lat);
+                    const building = findUserBuildingFeature(
+                        map,
+                        geo.lon,
+                        geo.lat,
+                    );
+                    let roofOverride: RoofOverride | null = null;
+                    let footprintSqm = 0;
+                    if (building) {
+                        applyHighlight(map, building);
+                        const ring = extractOuterRing(building.geometry);
+                        if (ring) {
+                            footprintSqm = polygonAreaSqMeters(ring);
+                            const cfg = roofFromFootprint(footprintSqm);
+                            roofOverride = {
+                                tilt_deg: cfg.tilt_deg,
+                                azimuth_deg: cfg.azimuth_deg,
+                                panel_count: cfg.panel_count,
+                                panel_area_sqm: cfg.panel_area_sqm,
+                                panel_efficiency_stc: cfg.panel_efficiency_stc,
+                            };
+                            console.info(
+                                "[results] roof from footprint:",
+                                `${footprintSqm.toFixed(0)} m² footprint → ${cfg.panel_count} panels, ${cfg.system_kw} kW`,
+                            );
+                        }
+                    } else {
+                        console.warn(
+                            "[results] no building polygon — falling back to defaults",
+                        );
+                    }
+                    runPvAnalysis(geo.lat, geo.lon, roofOverride);
                 });
+
+                async function runPvAnalysis(
+                    lat: number,
+                    lon: number,
+                    roof: RoofOverride | null,
+                ): Promise<void> {
+                    try {
+                        const pv = await fetchPvAnalysis(lat, lon, roof);
+                        if (cancelled) return;
+                        console.info(
+                            "[results] pv-analysis:",
+                            `${pv.system_kw} kW · ${pv.panel_count} panels · ${Math.round(pv.annual_kwh).toLocaleString()} kWh/yr · ${pv.avg_realization_pct}% realization`,
+                        );
+                        saveAnalysis(pv);
+                        setAnalysis(pv);
+                        dataReadyRef.current = true;
+                    } catch (e) {
+                        if (cancelled) return;
+                        setError(
+                            e instanceof Error
+                                ? e.message
+                                : "Solar analysis failed. Try again in a moment.",
+                        );
+                        setPhase("error");
+                    }
+                }
 
                 // 4) Two-track timing:
                 //    - RAF drives ShadeMap setDate at browser cadence (~60fps) for
@@ -253,45 +320,28 @@ export default function ResultsPage() {
                 }, 80);
             });
 
-            // 5) Fire backend in parallel — runs while map is loading tiles.
-            try {
-                console.info(
-                    "[results] geocoded:",
-                    geo.query,
-                    "→",
-                    `${geo.lat.toFixed(5)}, ${geo.lon.toFixed(5)}`,
-                );
-                const [pv, cl] = await Promise.all([
-                    fetchPvAnalysis(geo.lat, geo.lon),
-                    fetchCloudHistory(geo.lat, geo.lon).catch(() => null),
-                ]);
-                if (cancelled) return;
-                console.info(
-                    "[results] pv-analysis:",
-                    `${pv.system_kw} kW · ${Math.round(pv.annual_kwh).toLocaleString()} kWh/yr · ${pv.avg_realization_pct}% realization`,
-                );
-                if (cl) {
+            // 5) Cloud history doesn't need the building polygon, so it can
+            //    fire immediately. /pv-analysis fires later from moveend with
+            //    the real roof config — see runPvAnalysis above.
+            console.info(
+                "[results] geocoded:",
+                geo.query,
+                "→",
+                `${geo.lat.toFixed(5)}, ${geo.lon.toFixed(5)}`,
+            );
+            fetchCloudHistory(geo.lat, geo.lon)
+                .then((cl) => {
+                    if (cancelled || !cl) return;
                     console.info(
                         "[results] cloud-history:",
                         `${cl.annual_avg_pct}% avg cloud over ${cl.years_averaged}yr`,
                     );
-                }
-                saveAnalysis(pv);
-                setAnalysis(pv);
-                if (cl) {
                     saveCloud(cl);
                     setCloud(cl);
-                }
-                dataReadyRef.current = true;
-            } catch (e) {
-                if (cancelled) return;
-                setError(
-                    e instanceof Error
-                        ? e.message
-                        : "Solar analysis failed. Try again in a moment.",
-                );
-                setPhase("error");
-            }
+                })
+                .catch(() => {
+                    /* non-fatal — cloud data is supplementary */
+                });
         })();
 
         return () => {
@@ -524,7 +574,12 @@ function findHouseAtPoint(
     return null;
 }
 
-function highlightUserHouse(map: mapboxgl.Map, lon: number, lat: number): void {
+/** Query Mapbox vector tiles for the building polygon containing the address point. */
+function findUserBuildingFeature(
+    map: mapboxgl.Map,
+    lon: number,
+    lat: number,
+): BuildingFeature | null {
     try {
         const all = map.querySourceFeatures("composite", {
             sourceLayer: "building",
@@ -536,8 +591,21 @@ function highlightUserHouse(map: mapboxgl.Map, lon: number, lat: number): void {
         );
         if (!house) {
             console.warn("[results] no building polygon found at", lon, lat);
-            return;
+            return null;
         }
+        return house;
+    } catch (e) {
+        console.warn("[results] findUserBuildingFeature failed", e);
+        return null;
+    }
+}
+
+/** Paint a cyan fill over the user's house polygon. */
+function applyHighlight(
+    map: mapboxgl.Map,
+    house: BuildingFeature,
+): void {
+    try {
         const data = {
             type: "Feature" as const,
             geometry: house.geometry as never,
