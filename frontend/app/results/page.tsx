@@ -75,7 +75,6 @@ export default function ResultsPage() {
     const tickerRef = useRef<number | null>(null);
     const rafIdRef = useRef<number | null>(null);
     const shadeIdleRef = useRef<boolean>(true);
-    const ambientTimerRef = useRef<number | null>(null);
     const startRef = useRef<number>(0);
     const dataReadyRef = useRef<boolean>(false);
     const phaseRef = useRef<Phase>("loader");
@@ -348,14 +347,7 @@ export default function ResultsPage() {
                             rafIdRef.current = null;
                         }
                         shadeRef.current?.setOpacity(0.85);
-                        shadeRef.current?.setDate(new Date());
-                        // Ambient mode: re-stamp the current time every minute so the
-                        // shadows on /results stay anchored to real-time clock.
-                        if (ambientTimerRef.current === null) {
-                            ambientTimerRef.current = window.setInterval(() => {
-                                shadeRef.current?.setDate(new Date());
-                            }, 60_000);
-                        }
+                        shadeRef.current?.setDate(goldenHourToday());
                         setPhase("results");
                     }
                 }, 80);
@@ -391,8 +383,6 @@ export default function ResultsPage() {
                 window.clearInterval(tickerRef.current);
             if (rafIdRef.current !== null)
                 cancelAnimationFrame(rafIdRef.current);
-            if (ambientTimerRef.current !== null)
-                window.clearInterval(ambientTimerRef.current);
             shadeRef.current?.remove();
             mapRef.current?.remove();
         };
@@ -529,22 +519,28 @@ function dawnToday(): Date {
     return d;
 }
 
+/** Resting state for /results — late afternoon, long west-to-east shadows. */
+function goldenHourToday(): Date {
+    const d = new Date();
+    d.setHours(18, 0, 0, 0);
+    return d;
+}
+
 function easeInOutSine(t: number): number {
     return -(Math.cos(Math.PI * t) - 1) / 2;
 }
 
 /**
  * Cinematic choreography:
- *   0 – 3.0s  fly-in is happening; hold at dawn (long raking shadows)
- *   3.0 – 7.0s  first sweep: dawn (6:30) → dusk (20:00), 4s, slower
- *   7.0 – 8.5s  night: 20:00 → 23:30 (sun below horizon, deep shadow rest)
- *   8.5 – 12.5s second sweep: 5:00 → right-now-time-of-day, 4s
- *   12.5s +     real-time, settled
+ *   0 – 3.0s   fly-in is happening; hold at dawn (long raking shadows)
+ *   3.0 – 7.0s first sweep: dawn (6:30) → dusk (20:00), 4s, slower
+ *   7.0 – 8.5s night: 20:00 → 23:30 (sun below horizon, deep shadow rest)
+ *   8.5 – 12.5s second sweep: 5:00 → 18:00 (golden hour), 4s
+ *   12.5s +    settled at golden hour (regardless of user's wall clock)
  */
 function driveCinematic(t: number, shade: ShadeMap | null): void {
     if (!shade) return;
-    const now = new Date();
-    const base = new Date(now);
+    const base = new Date();
     base.setHours(0, 0, 0, 0);
 
     if (t < T_FLY_END) {
@@ -569,13 +565,11 @@ function driveCinematic(t: number, shade: ShadeMap | null): void {
         const f = easeInOutSine(
             (t - T_NIGHT_END) / (T_SWEEP2_END - T_NIGHT_END),
         );
-        const endHour = now.getHours() + now.getMinutes() / 60;
-        const startHour = 5.0;
-        setHourFrac(base, startHour + f * (endHour - startHour));
+        setHourFrac(base, 5.0 + f * 13.0); // 5:00 → 18:00 (golden hour)
         shade.setDate(base);
         return;
     }
-    shade.setDate(now);
+    shade.setDate(goldenHourToday());
 }
 
 function setHourFrac(d: Date, hourFrac: number): void {

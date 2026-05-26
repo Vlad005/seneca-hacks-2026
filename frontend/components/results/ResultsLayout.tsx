@@ -71,7 +71,7 @@ export function ResultsLayout({
                 </div>
             </div>
 
-            <BottomCTA derived={derived} />
+            <BottomCTA />
 
             <CustomizeModal
                 open={modalOpen}
@@ -128,10 +128,16 @@ function HeroSection({
                         {derived.breakevenYear === null ? "" : "years"}
                     </span>
                 </div>
-                <p className="mt-2 text-sm text-[var(--muted)]">
-                    {derived.breakevenYear === null
-                        ? "Doesn't pay back within the system lifetime."
-                        : `Then $${lifetimeShown.toLocaleString()} ahead by year 25.`}
+                <p className="mt-2 text-md text-[var(--muted)]">
+                    {derived.breakevenYear === null ? (
+                        "Doesn't pay back within the system lifetime."
+                    ) : (
+                        <>
+                            <span>Then </span>{" "}
+                            <b>{"$" + lifetimeShown.toLocaleString()} </b>
+                            <span>ahead by year 25.</span>
+                        </>
+                    )}
                 </p>
             </div>
             <button
@@ -1214,14 +1220,16 @@ function HouseGlyphBox() {
 
 /* ----------------------------- Bottom CTA ------------------------------- */
 
-function BottomCTA({ derived }: { derived: DerivedResults }) {
+function BottomCTA() {
     return (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-white/95 backdrop-blur lg:left-[38vw]">
             <div className="mx-auto flex w-full items-center justify-between gap-4 px-5 py-3 sm:px-8">
-                <div className="hidden text-xs text-[var(--subtle)] sm:block">
-                    ${Math.round(derived.annualSavingsCAD).toLocaleString()}/yr
-                    · pays off year {derived.breakevenYear ?? "—"}
-                </div>
+                <Link
+                    href="/rebates/extras"
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-black/5 hover:text-[var(--foreground)]"
+                >
+                    Back
+                </Link>
                 <Link
                     href="/installers"
                     className="inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
