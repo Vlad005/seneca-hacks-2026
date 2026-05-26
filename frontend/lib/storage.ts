@@ -6,6 +6,7 @@ import type {
   RebateSelections,
   UsageProfile,
 } from "./types";
+import type { Customization } from "./customization";
 
 const BILL_KEY = "helios:bill";
 const USAGE_KEY = "helios:usage";
@@ -13,6 +14,7 @@ const REBATES_KEY = "helios:rebates";
 const ANALYSIS_KEY = "helios:analysis";
 const CLOUD_KEY = "helios:cloud";
 const GEO_KEY = "helios:geo";
+const CUSTOMIZATION_KEY = "helios:customization";
 
 export function saveBill(bill: ExtractedBill): void {
     if (typeof window === "undefined") return;
@@ -152,4 +154,21 @@ export function clearDerivedFromBill(): void {
     sessionStorage.removeItem(CLOUD_KEY);
     sessionStorage.removeItem(USAGE_KEY);
     sessionStorage.removeItem(REBATES_KEY);
+    sessionStorage.removeItem(CUSTOMIZATION_KEY);
+}
+
+export function saveCustomization(c: Customization): void {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem(CUSTOMIZATION_KEY, JSON.stringify(c));
+}
+
+export function loadCustomization(): Customization | null {
+    if (typeof window === "undefined") return null;
+    const raw = sessionStorage.getItem(CUSTOMIZATION_KEY);
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw) as Customization;
+    } catch {
+        return null;
+    }
 }

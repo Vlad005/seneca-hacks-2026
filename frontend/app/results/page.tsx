@@ -19,13 +19,20 @@ import {
 import { geocodeAddress } from "@/lib/geocode";
 import {
     loadBill,
+    loadCustomization,
     loadGeo,
     loadRebates,
     loadUsage,
     saveAnalysis,
     saveCloud,
+    saveCustomization,
     saveGeo,
 } from "@/lib/storage";
+import {
+    defaultCustomization,
+    presetById,
+    type Customization,
+} from "@/lib/customization";
 import type {
     CloudHistory,
     ExtractedBill,
@@ -72,6 +79,7 @@ export default function ResultsPage() {
     const startRef = useRef<number>(0);
     const dataReadyRef = useRef<boolean>(false);
     const phaseRef = useRef<Phase>("loader");
+    const geocodedRef = useRef<{ lat: number; lon: number } | null>(null);
 
     const [phase, setPhase] = useState<Phase>("loader");
     const [elapsedSec, setElapsedSec] = useState(0);
@@ -81,6 +89,11 @@ export default function ResultsPage() {
     const [bill, setBill] = useState<ExtractedBill | null>(null);
     const [usage, setUsage] = useState<UsageProfile | null>(null);
     const [rebates, setRebates] = useState<RebateSelections | null>(null);
+    const [customization, setCustomization] = useState<Customization | null>(
+        null,
+    );
+    const [recomputing, setRecomputing] = useState(false);
+    const [footprintSqm, setFootprintSqm] = useState<number | null>(null);
 
     // When phase flips to results, the map container resizes via CSS;
     // tell Mapbox to recompute its viewport so the canvas isn't squashed/stretched.
@@ -104,6 +117,8 @@ export default function ResultsPage() {
         setBill(loadedBill);
         setUsage(loadUsage());
         setRebates(loadRebates());
+        const savedCustom = loadCustomization();
+        if (savedCustom) setCustomization(savedCustom);
         let cancelled = false;
 
         (async () => {
@@ -126,6 +141,7 @@ export default function ResultsPage() {
                 setPhase("error");
                 return;
             }
+            geocodedRef.current = { lat: geo.lat, lon: geo.lon };
             if (!containerRef.current || !MAPBOX_TOKEN) {
                 setError(
                     MAPBOX_TOKEN
@@ -208,6 +224,7 @@ export default function ResultsPage() {
                 // 3) After the fly-in lands, find the building, derive a
                 //    real roof config from its footprint, then fire /pv-analysis
                 //    with that config so the numbers reflect the actual roof.
+                //    If the user has previously customized, those values win.
                 map.once("moveend", async () => {
                     if (cancelled) return;
                     const building = findUserBuildingFeature(
@@ -216,13 +233,16 @@ export default function ResultsPage() {
                         geo.lat,
                     );
                     let roofOverride: RoofOverride | null = null;
-                    let footprintSqm = 0;
+                    let detectedPanelCount = 22;
+
                     if (building) {
                         applyHighlight(map, building);
                         const ring = extractOuterRing(building.geometry);
                         if (ring) {
-                            footprintSqm = polygonAreaSqMeters(ring);
-                            const cfg = roofFromFootprint(footprintSqm);
+                            const fp = polygonAreaSqMeters(ring);
+                            setFootprintSqm(fp);
+                            const cfg = roofFromFootprint(fp);
+                            detectedPanelCount = cfg.panel_count;
                             roofOverride = {
                                 tilt_deg: cfg.tilt_deg,
                                 azimuth_deg: cfg.azimuth_deg,
@@ -232,7 +252,7 @@ export default function ResultsPage() {
                             };
                             console.info(
                                 "[results] roof from footprint:",
-                                `${footprintSqm.toFixed(0)} m² footprint → ${cfg.panel_count} panels, ${cfg.system_kw} kW`,
+                                `${fp.toFixed(0)} m² footprint → ${cfg.panel_count} panels, ${cfg.system_kw} kW`,
                             );
                         }
                     } else {
@@ -240,6 +260,27 @@ export default function ResultsPage() {
                             "[results] no building polygon — falling back to defaults",
                         );
                     }
+
+                    // Seed customization state from saved customization OR
+                    // the freshly-detected roof.
+                    const saved = loadCustomization();
+                    const effectiveCustom: Customization =
+                        saved ?? defaultCustomization(detectedPanelCount);
+                    setCustomization(effectiveCustom);
+
+                    // If user has saved customization, send THAT to /pv-analysis
+                    // (not the auto-derived footprint config).
+                    if (saved) {
+                        const preset = presetById(saved.panelPresetId);
+                        roofOverride = {
+                            tilt_deg: saved.tiltDeg,
+                            azimuth_deg: saved.azimuthDeg,
+                            panel_count: saved.panelCount,
+                            panel_area_sqm: preset.area_sqm,
+                            panel_efficiency_stc: preset.efficiency,
+                        };
+                    }
+
                     runPvAnalysis(geo.lat, geo.lon, roofOverride);
                 });
 
@@ -371,8 +412,43 @@ export default function ResultsPage() {
 
     const derived = useMemo(() => {
         if (!bill || !usage || !analysis) return null;
-        return deriveResults(bill, usage, analysis);
-    }, [bill, usage, analysis]);
+        const preset = customization
+            ? presetById(customization.panelPresetId)
+            : undefined;
+        return deriveResults(bill, usage, analysis, { panelPreset: preset });
+    }, [bill, usage, analysis, customization]);
+
+    const handleApplyCustomization = async (next: Customization) => {
+        if (!geocodedRef.current) return;
+        setCustomization(next);
+        saveCustomization(next);
+        const preset = presetById(next.panelPresetId);
+        const roofOverride: RoofOverride = {
+            tilt_deg: next.tiltDeg,
+            azimuth_deg: next.azimuthDeg,
+            panel_count: next.panelCount,
+            panel_area_sqm: preset.area_sqm,
+            panel_efficiency_stc: preset.efficiency,
+        };
+        setRecomputing(true);
+        try {
+            const pv = await fetchPvAnalysis(
+                geocodedRef.current.lat,
+                geocodedRef.current.lon,
+                roofOverride,
+            );
+            console.info(
+                "[results] pv-analysis (custom):",
+                `${pv.system_kw} kW · ${pv.panel_count} panels · ${Math.round(pv.annual_kwh).toLocaleString()} kWh/yr`,
+            );
+            saveAnalysis(pv);
+            setAnalysis(pv);
+        } catch (e) {
+            console.warn("[results] customization re-analysis failed", e);
+        } finally {
+            setRecomputing(false);
+        }
+    };
 
     const addressLine = useMemo(() => {
         if (!bill) return "";
@@ -388,7 +464,7 @@ export default function ResultsPage() {
             : "fixed top-0 left-0 right-0 z-0 h-[45vh] lg:right-auto lg:h-screen lg:w-[38vw]";
 
     return (
-        <div className="relative min-h-screen">
+        <div className="relative min-h-screen bg-[#202020]">
             <div ref={containerRef} className={mapClasses} />
 
             {/* Loader-only overlays. */}
@@ -424,6 +500,13 @@ export default function ResultsPage() {
                         derived={derived}
                         meterChoice={meterChoice}
                         address={addressLine}
+                        customization={
+                            customization ??
+                            defaultCustomization(derived.panelCount)
+                        }
+                        onApplyCustomization={handleApplyCustomization}
+                        recomputing={recomputing}
+                        footprintSqm={footprintSqm}
                     />
                 </main>
             )}
@@ -601,10 +684,7 @@ function findUserBuildingFeature(
 }
 
 /** Paint a cyan fill over the user's house polygon. */
-function applyHighlight(
-    map: mapboxgl.Map,
-    house: BuildingFeature,
-): void {
+function applyHighlight(map: mapboxgl.Map, house: BuildingFeature): void {
     try {
         const data = {
             type: "Feature" as const,

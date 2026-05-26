@@ -18,9 +18,10 @@
  *   system_kw       = panel_count × PANEL_WATTS / 1000
  */
 
-export const PANEL_AREA_SQM = 1.92;
-export const PANEL_SLOT_SQM = 2.2;
-export const PANEL_WATTS = 380;
+import { STANDARD_PRESET, type PanelPreset } from "./customization";
+
+/** Slot footprint per panel ≈ panel area × 15% spacing buffer. */
+export const SPACING_BUFFER = 1.15;
 export const ASSUMED_TILT_DEG = 30;
 export const PITCH_MULTIPLIER = 1 / Math.cos((ASSUMED_TILT_DEG * Math.PI) / 180);
 export const SOUTH_HALF_FRACTION = 0.5;
@@ -85,23 +86,24 @@ export function extractOuterRing(geometry: {
   return null;
 }
 
-/** Build a complete RoofConfig from just the footprint area. */
-export function roofFromFootprint(footprintSqm: number): RoofConfig {
+/** Build a complete RoofConfig from a footprint area + a chosen panel preset. */
+export function roofFromFootprint(
+  footprintSqm: number,
+  preset: PanelPreset = STANDARD_PRESET,
+): RoofConfig {
+  const slotSqm = preset.area_sqm * SPACING_BUFFER;
   const total = footprintSqm * PITCH_MULTIPLIER;
   const usable = Math.max(0, total * SOUTH_HALF_FRACTION * OBSTRUCTION_FACTOR);
-  // Clamp panel count to a sane range — 6 is the smallest residential
-  // install most LDCs will approve; 50 is well past 12 kW Ontario cap.
-  const panel_count = Math.max(
-    6,
-    Math.min(50, Math.floor(usable / PANEL_SLOT_SQM)),
-  );
-  const system_kw = Math.round((panel_count * PANEL_WATTS) / 100) / 10; // 1 decimal
+  // Clamp panel count to a sane range — 6 is the smallest residential install
+  // most LDCs will approve; 50 is well past the 12 kW Ontario residential cap.
+  const panel_count = Math.max(6, Math.min(50, Math.floor(usable / slotSqm)));
+  const system_kw = Math.round((panel_count * preset.watts) / 100) / 10;
   return {
     footprint_sqm: Math.round(footprintSqm),
-    usable_sqm: Math.round(panel_count * PANEL_SLOT_SQM),
+    usable_sqm: Math.round(panel_count * slotSqm),
     panel_count,
-    panel_area_sqm: PANEL_AREA_SQM,
-    panel_efficiency_stc: 0.205,
+    panel_area_sqm: preset.area_sqm,
+    panel_efficiency_stc: preset.efficiency,
     system_kw,
     tilt_deg: ASSUMED_TILT_DEG,
     azimuth_deg: 180,

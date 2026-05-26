@@ -2,6 +2,12 @@ import { touEffectiveRate } from "@/data/ontario-rates";
 import { HRS_DEMO_SCENARIO, type HrsScenario } from "@/data/scenarios";
 import { computePayback } from "./payback";
 import type { ExtractedBill, PvAnalysis, UsageProfile } from "./types";
+import type { PanelPreset } from "./customization";
+
+export interface DeriveOptions {
+  /** When present, the panel preset's cost_per_w drives upfront cost in payback. */
+  panelPreset?: PanelPreset;
+}
 
 export interface DerivedResults {
   // Roof at a glance (B)
@@ -55,6 +61,7 @@ export function deriveResults(
   bill: ExtractedBill,
   usage: UsageProfile,
   analysis: PvAnalysis,
+  options: DeriveOptions = {},
 ): DerivedResults {
   const dailyCurveHourlyFrac = dailyCurveFromSplit(usage.daily_split);
 
@@ -93,6 +100,7 @@ export function deriveResults(
   const payback = computePayback({
     systemKw: analysis.system_kw,
     year1SavingsCAD: annualSavingsCAD,
+    costPerWattCAD: options.panelPreset?.cost_per_w_cad,
   });
 
   return {
