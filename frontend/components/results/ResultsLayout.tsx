@@ -131,7 +131,7 @@ function HeroSection({
                 <p className="mt-2 text-sm text-[var(--muted)]">
                     {derived.breakevenYear === null
                         ? "Doesn't pay back within the system lifetime."
-                        : `Then $${lifetimeShown.toLocaleString()} ahead over the 25-year window.`}
+                        : `Then $${lifetimeShown.toLocaleString()} ahead by year 25.`}
                 </p>
             </div>
             <button
@@ -312,10 +312,7 @@ function SunlightSection({ derived }: { derived: DerivedResults }) {
     }));
     return (
         <Card>
-            <SectionHeader
-                title="How much sunlight your roof actually gets"
-                hint="Perfect sunny days vs. real Ontario weather (5-year average)"
-            />
+            <SectionHeader title="How much sunlight your roof actually gets" />
             <div className="mt-4 grid items-center gap-6 sm:grid-cols-[1fr_auto_1fr]">
                 <SunChart
                     data={data}
@@ -395,26 +392,20 @@ function NetMeteringFlowSection({ derived }: { derived: DerivedResults }) {
         {
             label: "Self-consumed",
             value: `${Math.round(derived.annualSelfConsumptionPct)}%`,
-            sub: "of generation",
         },
         {
-            label: "Exported",
+            label: "Annual export",
             value: `${Math.round(derived.annualExportKwh).toLocaleString()} kWh`,
-            sub: "to the grid / year",
         },
         {
-            label: "Bill credit",
+            label: "Annual bill credit",
             value: `$${Math.round(derived.annualBillCreditCAD).toLocaleString()}`,
-            sub: "annual at TOU rate",
         },
     ];
 
     return (
         <Card>
-            <SectionHeader
-                title="A typical day on your roof"
-                hint="Hour-by-hour generation vs your usage curve"
-            />
+            <SectionHeader title="A typical day on your roof" />
             <div className="mt-4 h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
@@ -509,20 +500,11 @@ function NetMeteringFlowSection({ derived }: { derived: DerivedResults }) {
                         <div className="text-xl font-semibold tabular-nums">
                             {s.value}
                         </div>
-                        <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-[var(--subtle)]">
-                            {s.label}
-                        </div>
                         <div className="text-xs text-[var(--muted)]">
-                            {s.sub}
+                            {s.label}
                         </div>
                     </div>
                 ))}
-            </div>
-
-            <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
-                Your {derived.systemKw.toFixed(1)} kW system is under
-                Ontario&apos;s 12 kW residential Net Metering cap (effective May
-                2026 under O. Reg. 541/05).
             </div>
         </Card>
     );
@@ -564,10 +546,7 @@ function MonthlyBalanceSection({ derived }: { derived: DerivedResults }) {
     }));
     return (
         <Card>
-            <SectionHeader
-                title="Your year in net metering"
-                hint="Summer generation banks credits; winter draw spends them"
-            />
+            <SectionHeader title="Your year in net metering" />
             <div className="mt-4 h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
@@ -675,10 +654,7 @@ function PaybackTimelineSection({ derived }: { derived: DerivedResults }) {
         labelAnchor === "start" ? 6 : labelAnchor === "end" ? -6 : 0;
     return (
         <Card>
-            <SectionHeader
-                title="When the system pays itself off"
-                hint="25-year cumulative cashflow with degradation + escalation"
-            />
+            <SectionHeader title="When the system pays itself off" />
             <div className="mt-4 h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
@@ -792,13 +768,13 @@ function PaybackTimelineSection({ derived }: { derived: DerivedResults }) {
 function ReadinessTab({ derived }: { derived: DerivedResults }) {
     return (
         <Card>
+            <SectionHeader title="Connection readiness" />
             <ReadinessHero systemKw={derived.systemKw} />
-            <div className="mt-6 divide-y divide-[var(--border)]">
+            <div className="mt-10 divide-y divide-[var(--border)]">
                 <NetMeteringCapItem systemKw={derived.systemKw} />
                 <FeederCapacityItem />
                 <DerDensityItem />
                 <DistanceItem />
-                <RateClassItem />
             </div>
         </Card>
     );
@@ -810,7 +786,6 @@ interface ReadinessScore {
     score: number;
     tone: "pass" | "warn";
     verdictLabel: string;
-    summary: string;
 }
 
 /** Demo inputs for sections 2-4 — kept in sync with section visuals. */
@@ -832,8 +807,7 @@ function computeReadinessScore(systemKw: number): ReadinessScore {
               : 0.3;
     const derScore =
         DER_SATURATION < 0.1 ? 1 : DER_SATURATION < 0.25 ? 0.8 : 0.4;
-    const distanceScore =
-        DISTANCE_KM < 3 ? 1 : DISTANCE_KM < 5 ? 0.7 : 0.4;
+    const distanceScore = DISTANCE_KM < 3 ? 1 : DISTANCE_KM < 5 ? 0.7 : 0.4;
 
     const raw =
         capScore * 40 +
@@ -843,66 +817,40 @@ function computeReadinessScore(systemKw: number): ReadinessScore {
         distanceScore * 15;
     const score = Math.round(raw) / 10;
 
-    let tone: "pass" | "warn";
-    let verdictLabel: string;
-    let summary: string;
     if (!capPass) {
-        tone = "warn";
-        verdictLabel = "CIA likely required";
-        summary = `${systemKw.toFixed(1)} kW exceeds the 12 kW residential cap — expect a Connection Impact Assessment fee and a 6–12 week review.`;
-    } else if (score >= 8.5) {
-        tone = "pass";
-        verdictLabel = "Likely approvable";
-        summary =
-            "Under cap, feeder has headroom, and you're close to the substation. Expected approval ~2 weeks, no CIA fee.";
-    } else if (score >= 7.0) {
-        tone = "pass";
-        verdictLabel = "Likely approvable";
-        summary =
-            "No hard blockers, but feeder utilization is in the amber zone — standard LDC review expected.";
-    } else {
-        tone = "warn";
-        verdictLabel = "Some review expected";
-        summary =
-            "Higher feeder utilization or DER density on your feeder. Your LDC may flag this for deeper review before approving.";
+        return { score, tone: "warn", verdictLabel: "CIA likely required" };
     }
-    return { score, tone, verdictLabel, summary };
+    if (score >= 7.0) {
+        return { score, tone: "pass", verdictLabel: "Likely approvable" };
+    }
+    return { score, tone: "warn", verdictLabel: "Some review expected" };
 }
 
 function ReadinessHero({ systemKw }: { systemKw: number }) {
-    const { score, tone, verdictLabel, summary } =
-        computeReadinessScore(systemKw);
+    const { score, tone, verdictLabel } = computeReadinessScore(systemKw);
+    const verdictColor =
+        tone === "pass" ? "text-[var(--accent-deep)]" : "text-amber-700";
     return (
-        <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--subtle)]">
-                Connection readiness
-            </p>
-            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-2">
+        <div className="mt-5">
+            <div className="flex items-baseline gap-3">
                 <span
-                    className={`text-[56px] font-semibold leading-none tracking-[-0.02em] tabular-nums ${
+                    className={`text-[64px] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[72px] ${
                         tone === "pass" ? "" : "text-amber-700"
                     }`}
                 >
                     {score.toFixed(1)}
                 </span>
-                <span className="text-lg font-medium text-[var(--muted)]">
+                <span className="text-xl font-medium text-[var(--muted)]">
                     / 10
                 </span>
-                <span
-                    className={`ml-1 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                        tone === "pass"
-                            ? "bg-emerald-50 text-emerald-800"
-                            : "bg-amber-50 text-amber-900"
-                    }`}
-                >
-                    {tone === "pass" && <CheckGlyph />}
-                    {verdictLabel}
-                </span>
             </div>
-            <p className="mt-4 text-sm text-[var(--muted)]">{summary}</p>
-            <p className="mt-2 text-[11px] text-[var(--subtle)]">
-                Sample data for feeder, DER density, and substation distance ·
-                live LDC inputs in v2
+            <p
+                className={`mt-3 text-base font-medium tracking-[-0.01em] ${verdictColor}`}
+            >
+                {verdictLabel}.
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--subtle)]">
+                Sample data for feeder, DER density, and substation distance
             </p>
         </div>
     );
@@ -915,17 +863,17 @@ function ReadinessRow({
     children,
 }: {
     eyebrow: string;
-    pill: string;
+    pill?: string;
     pillTone?: "pass" | "warn";
     children: React.ReactNode;
 }) {
     return (
-        <section className="py-6 first:pt-2 last:pb-2">
+        <section className="py-8 first:pt-4 last:pb-2">
             <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--subtle)]">
                     {eyebrow}
                 </p>
-                <ReadinessPill tone={pillTone}>{pill}</ReadinessPill>
+                {pill && <ReadinessPill tone={pillTone}>{pill}</ReadinessPill>}
             </div>
             {children}
         </section>
@@ -971,38 +919,17 @@ function CheckGlyph() {
     );
 }
 
-function ReadinessSource({ label, url }: { label: string; url?: string }) {
-    if (!url) {
-        return (
-            <span className="mt-3 inline-block text-[11px] uppercase tracking-[0.1em] text-[var(--subtle)]">
-                {label}
-            </span>
-        );
-    }
-    return (
-        <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-block text-[11px] uppercase tracking-[0.1em] text-[var(--subtle)] hover:text-[var(--foreground)]"
-        >
-            {label} ↗
-        </a>
-    );
-}
-
 /* ---------- 1. Net Metering cap ---------- */
 
 function NetMeteringCapItem({ systemKw }: { systemKw: number }) {
     const cap = 12;
     const pct = Math.min(100, (systemKw / cap) * 100);
-    const headroom = Math.max(0, cap - systemKw);
     const pass = systemKw <= cap;
     return (
         <ReadinessRow
             eyebrow="Net Metering cap"
-            pill={pass ? "Pass" : "Over cap"}
-            pillTone={pass ? "pass" : "warn"}
+            pill={pass ? undefined : "Over cap"}
+            pillTone="warn"
         >
             <p className="mt-3 text-base">
                 <span className="font-semibold tabular-nums">
@@ -1026,15 +953,6 @@ function NetMeteringCapItem({ systemKw }: { systemKw: number }) {
                 <span>0 kW</span>
                 <span>12 kW</span>
             </div>
-            <p className="mt-3 text-xs text-[var(--muted)]">
-                {pass
-                    ? `${headroom.toFixed(1)} kW of headroom · No Connection Impact Assessment required`
-                    : "Over residential cap · CIA likely required"}
-            </p>
-            <ReadinessSource
-                label="Ontario Regulation 541/05"
-                url="https://www.ontario.ca/laws/regulation/050541"
-            />
         </ReadinessRow>
     );
 }
@@ -1053,7 +971,7 @@ function FeederCapacityItem() {
     const filled = utilized * circumference;
 
     return (
-        <ReadinessRow eyebrow="Feeder capacity" pill="Available">
+        <ReadinessRow eyebrow="Feeder capacity">
             <div className="mt-4 flex items-center gap-6">
                 <div className="relative h-24 w-24 shrink-0">
                     <svg
@@ -1088,7 +1006,7 @@ function FeederCapacityItem() {
                         </span>
                     </div>
                 </div>
-                <div className="flex-1 space-y-1.5 text-sm">
+                <div className="min-w-0 flex-1 space-y-1.5 text-sm flex-1">
                     <FeederRow label="Approved" value={`${approvedMW} MW`} />
                     <FeederRow
                         label="Available"
@@ -1102,14 +1020,6 @@ function FeederCapacityItem() {
                     />
                 </div>
             </div>
-            <p className="mt-3 text-xs text-[var(--muted)]">
-                Sample value · LDCs publish per-feeder capacity. V2 wires into
-                the Toronto Hydro Load Capacity Map.
-            </p>
-            <ReadinessSource
-                label="Toronto Hydro Load Capacity Map"
-                url="https://www.torontohydro.com/contractors-and-developers/load-capacity-map"
-            />
         </ReadinessRow>
     );
 }
@@ -1185,8 +1095,8 @@ function DerDensityItem() {
         }
     }
     return (
-        <ReadinessRow eyebrow="DER density" pill="Moderate">
-            <div className="mt-4 flex items-center gap-6">
+        <ReadinessRow eyebrow="DER density">
+            <div className="mt-4 flex items-center gap-6 justify-between">
                 <div
                     className="grid shrink-0"
                     style={{
@@ -1208,8 +1118,8 @@ function DerDensityItem() {
                         </div>
                     ))}
                 </div>
-                <div className="flex-1">
-                    <div className="flex items-baseline gap-2">
+                <div className="min-w-0 flex-1 sm:max-w-[14rem]">
+                    <div className="flex items-baseline gap-2 justify-end">
                         <span className="text-xl font-semibold tabular-nums">
                             14
                         </span>
@@ -1217,19 +1127,11 @@ function DerDensityItem() {
                             systems on your feeder
                         </span>
                     </div>
-                    <div className="mt-1 text-xs text-[var(--muted)]">
-                        ~5.6% saturation · your property in emerald
+                    <div className="mt-1 text-xs text-right text-[var(--muted)]">
+                        ~5.6% saturation
                     </div>
                 </div>
             </div>
-            <p className="mt-3 text-xs text-[var(--muted)]">
-                Sample value · LDCs maintain DER registries internally. V2
-                queries the connection-approval registry.
-            </p>
-            <ReadinessSource
-                label="CER · Ontario Energy Profile"
-                url="https://www.cer-rec.gc.ca/en/data-analysis/energy-markets/province-territory-energy-profiles/ontario.html"
-            />
         </ReadinessRow>
     );
 }
@@ -1253,7 +1155,7 @@ function HouseGlyphMini({ color }: { color: string }) {
 function DistanceItem() {
     const km = 1.8;
     return (
-        <ReadinessRow eyebrow="Distance to substation" pill="Low risk">
+        <ReadinessRow eyebrow="Distance to substation">
             <div className="mt-5 flex items-start gap-3">
                 <div className="flex flex-col items-center">
                     <SubstationGlyph />
@@ -1274,14 +1176,6 @@ function DistanceItem() {
                     </span>
                 </div>
             </div>
-            <p className="mt-4 text-xs text-[var(--muted)]">
-                Voltage rise risk: Low · Urban Toronto feeders typically run
-                1.5–3 km
-            </p>
-            <ReadinessSource
-                label="OSM Overpass · substation lookup"
-                url="https://overpass-turbo.eu/"
-            />
         </ReadinessRow>
     );
 }
@@ -1315,25 +1209,6 @@ function HouseGlyphBox() {
                 <path d="M7 0L0 5.5V14h4.5V9.5h5V14H14V5.5z" />
             </svg>
         </div>
-    );
-}
-
-/* ---------- 5. Rate class (lightest) ---------- */
-
-function RateClassItem() {
-    return (
-        <ReadinessRow eyebrow="Rate class" pill="Eligible">
-            <p className="mt-2 text-sm">
-                Residential —{" "}
-                <span className="text-[var(--muted)]">
-                    retail electricity customer
-                </span>
-            </p>
-            <ReadinessSource
-                label="OEB · O. Reg. 541/05"
-                url="https://www.ontario.ca/laws/regulation/050541"
-            />
-        </ReadinessRow>
     );
 }
 
