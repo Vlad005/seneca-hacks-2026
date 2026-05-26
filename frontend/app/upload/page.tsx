@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, extractBill } from "@/lib/api";
-import { saveBill } from "@/lib/storage";
+import { clearDerivedFromBill, saveBill } from "@/lib/storage";
 import { Wordmark } from "@/components/ui/Wordmark";
 import { Button } from "@/components/ui/Button";
 
@@ -82,6 +82,9 @@ export default function UploadPage() {
         setError(null);
         try {
             const bill = await extractBill(file);
+            // Fresh bill = fresh run. Wipe geocoded coords + analysis + cloud +
+            // usage + rebate answers so they don't carry over from the prior home.
+            clearDerivedFromBill();
             saveBill(bill);
             router.push("/confirm");
         } catch (e) {

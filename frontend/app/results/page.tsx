@@ -255,11 +255,27 @@ export default function ResultsPage() {
 
             // 5) Fire backend in parallel — runs while map is loading tiles.
             try {
+                console.info(
+                    "[results] geocoded:",
+                    geo.query,
+                    "→",
+                    `${geo.lat.toFixed(5)}, ${geo.lon.toFixed(5)}`,
+                );
                 const [pv, cl] = await Promise.all([
                     fetchPvAnalysis(geo.lat, geo.lon),
                     fetchCloudHistory(geo.lat, geo.lon).catch(() => null),
                 ]);
                 if (cancelled) return;
+                console.info(
+                    "[results] pv-analysis:",
+                    `${pv.system_kw} kW · ${Math.round(pv.annual_kwh).toLocaleString()} kWh/yr · ${pv.avg_realization_pct}% realization`,
+                );
+                if (cl) {
+                    console.info(
+                        "[results] cloud-history:",
+                        `${cl.annual_avg_pct}% avg cloud over ${cl.years_averaged}yr`,
+                    );
+                }
                 saveAnalysis(pv);
                 setAnalysis(pv);
                 if (cl) {
@@ -310,9 +326,7 @@ export default function ResultsPage() {
 
     const addressLine = useMemo(() => {
         if (!bill) return "";
-        return [bill.service_address, bill.city]
-            .filter(Boolean)
-            .join(", ");
+        return [bill.service_address, bill.city].filter(Boolean).join(", ");
     }, [bill]);
 
     const meterChoice: "net-metering" | "hrs" =
@@ -324,7 +338,7 @@ export default function ResultsPage() {
             : "fixed top-0 left-0 right-0 z-0 h-[45vh] lg:right-auto lg:h-screen lg:w-[38vw]";
 
     return (
-        <div className="relative min-h-screen bg-[#0a1018]">
+        <div className="relative min-h-screen">
             <div ref={containerRef} className={mapClasses} />
 
             {/* Loader-only overlays. */}

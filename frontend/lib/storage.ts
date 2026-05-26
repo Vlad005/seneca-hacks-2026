@@ -137,3 +137,19 @@ export function clearAll(): void {
     sessionStorage.removeItem(CLOUD_KEY);
     sessionStorage.removeItem(GEO_KEY);
 }
+
+/**
+ * Clear everything derived from the current bill — geocoded coords, solar
+ * analysis, cloud history, usage edits, rebate answers. Call this from /upload
+ * right before saving a NEW bill so a different home doesn't inherit the old
+ * roof's lat/lon cache (which is why a second upload was still zooming to the
+ * first address).
+ */
+export function clearDerivedFromBill(): void {
+    if (typeof window === "undefined") return;
+    sessionStorage.removeItem(GEO_KEY);
+    sessionStorage.removeItem(ANALYSIS_KEY);
+    sessionStorage.removeItem(CLOUD_KEY);
+    sessionStorage.removeItem(USAGE_KEY);
+    sessionStorage.removeItem(REBATES_KEY);
+}

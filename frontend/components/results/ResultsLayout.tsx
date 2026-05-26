@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Area,
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   ReferenceLine,
@@ -17,118 +19,119 @@ import type { DerivedResults } from "@/lib/derive-results";
 
 interface Props {
   derived: DerivedResults;
+  /** Kept in props for future use; UI no longer toggles scenarios. */
   meterChoice: "net-metering" | "hrs";
   address: string;
 }
 
+type TabValue = "overview" | "data" | "readiness";
+
 /* ------------------------------------------------------------------------ */
 
-export function ResultsLayout({ derived, meterChoice, address }: Props) {
-  const [scenario, setScenario] = useState<"net-metering" | "hrs">(meterChoice);
+export function ResultsLayout({ derived, address }: Props) {
+  const [tab, setTab] = useState<TabValue>("overview");
 
   return (
-    <div className="space-y-12 px-5 py-10 sm:px-8 sm:py-14 lg:py-12">
-      <HeroSection
-        scenario={scenario}
-        onSwap={setScenario}
-        derived={derived}
-        address={address}
-      />
-      <RoofGlanceSection derived={derived} />
-      <SunlightSection derived={derived} />
-      <NetMeteringFlowSection derived={derived} />
-      <MonthlyBalanceSection derived={derived} />
-      <ReadinessSection derived={derived} />
-      <PaybackTimelineSection derived={derived} />
-      <InstallersSection />
+    <div className="px-5 pt-10 pb-32 sm:px-8 sm:pt-14 lg:pt-12">
+      <HeroSection derived={derived} address={address} />
+
+      <div className="mt-8">
+        <TabBar value={tab} onChange={setTab} />
+      </div>
+
+      <div className="mt-6 space-y-8">
+        {tab === "overview" && <OverviewTab derived={derived} />}
+        {tab === "data" && <DataTab derived={derived} />}
+        {tab === "readiness" && <ReadinessTab derived={derived} />}
+      </div>
+
+      <BottomCTA derived={derived} />
     </div>
   );
 }
 
-/* ----------------------------- Section A: Hero -------------------------- */
+/* ----------------------------- Hero ------------------------------------- */
 
 function HeroSection({
-  scenario,
-  onSwap,
   derived,
   address,
 }: {
-  scenario: "net-metering" | "hrs";
-  onSwap: (v: "net-metering" | "hrs") => void;
   derived: DerivedResults;
   address: string;
 }) {
-  const heroValue =
-    scenario === "net-metering"
-      ? derived.lifetimeValueCAD
-      : derived.hrsScenario.lifetimeValue;
-  const heroLabel =
-    scenario === "net-metering" ? "Net Metering" : "Home Renovation Savings";
-
-  const display = useCountUp(Math.round(heroValue), 1600);
+  const breakevenTarget = derived.breakevenYear ?? 0;
+  const breakeven = useCountUp(breakevenTarget, 1100);
+  const lifetimeShown = useCountUp(Math.max(0, Math.round(derived.lifetimeValueCAD)), 1500);
 
   return (
     <section>
-      <p className="eyebrow">25-year savings · {heroLabel}</p>
-      <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
-        <div className="text-[56px] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[72px]">
-          ${display.toLocaleString()}
+      <p className="eyebrow">
+        {derived.systemKw.toFixed(1)} kW system · {address || "Your roof"}
+      </p>
+      <div className="mt-3">
+        <p className="text-sm text-[var(--muted)]">Break even in</p>
+        <div className="mt-1 flex items-baseline gap-3">
+          <span className="text-[64px] font-semibold leading-none tracking-[-0.03em] tabular-nums sm:text-[80px]">
+            {derived.breakevenYear === null ? "—" : breakeven}
+          </span>
+          <span className="text-2xl font-medium text-[var(--muted)]">
+            {derived.breakevenYear === null ? "" : "years"}
+          </span>
         </div>
-        <div className="mb-1 text-sm text-[var(--muted)]">
-          {derived.systemKw} kW · {address}
-        </div>
-      </div>
-
-      <div className="mt-5 inline-flex rounded-full border border-[var(--border)] p-0.5">
-        <ScenarioToggle
-          active={scenario === "net-metering"}
-          onClick={() => onSwap("net-metering")}
-        >
-          Net Metering
-        </ScenarioToggle>
-        <ScenarioToggle
-          active={scenario === "hrs"}
-          onClick={() => onSwap("hrs")}
-        >
-          HRS comparison
-        </ScenarioToggle>
-      </div>
-
-      {scenario === "hrs" && (
-        <p className="mt-3 max-w-md text-xs text-[var(--subtle)]">
-          With HRS you pocket $10K up front but lose ~$
-          {Math.abs(derived.hrsScenario.deltaVsNetMetering).toLocaleString()} over
-          25 years vs Net Metering. Alternate scenario — precomputed.
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          {derived.breakevenYear === null
+            ? "Doesn't pay back within the system lifetime."
+            : `Then $${lifetimeShown.toLocaleString()} ahead over the 25-year window.`}
         </p>
-      )}
+      </div>
     </section>
   );
 }
 
-function ScenarioToggle({
-  active,
-  onClick,
-  children,
+/* ----------------------------- TabBar ----------------------------------- */
+
+const TABS: { value: TabValue; label: string }[] = [
+  { value: "overview", label: "Overview" },
+  { value: "data", label: "Data" },
+  { value: "readiness", label: "Readiness" },
+];
+
+function TabBar({
+  value,
+  onChange,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  value: TabValue;
+  onChange: (v: TabValue) => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
-        active
-          ? "bg-[var(--ink)] text-[var(--background)]"
-          : "text-[var(--muted)] hover:text-[var(--foreground)]"
-      }`}
-    >
-      {children}
-    </button>
+    <div className="inline-flex rounded-full border border-[var(--border)] bg-[var(--card)] p-0.5">
+      {TABS.map((t) => (
+        <button
+          key={t.value}
+          onClick={() => onChange(t.value)}
+          className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+            value === t.value
+              ? "bg-[var(--ink)] text-[var(--background)]"
+              : "text-[var(--muted)] hover:text-[var(--foreground)]"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
-/* -------------------- Section B: Roof at a glance ----------------------- */
+/* ------------------------------ Overview tab ---------------------------- */
+
+function OverviewTab({ derived }: { derived: DerivedResults }) {
+  return (
+    <>
+      <RoofGlanceSection derived={derived} />
+      <KeyNumbersSection derived={derived} />
+    </>
+  );
+}
 
 function RoofGlanceSection({ derived }: { derived: DerivedResults }) {
   const stats = [
@@ -159,19 +162,72 @@ function RoofGlanceSection({ derived }: { derived: DerivedResults }) {
   );
 }
 
-/* ---------------------- Section C: Sunlight graphs ---------------------- */
+function KeyNumbersSection({ derived }: { derived: DerivedResults }) {
+  return (
+    <Card>
+      <SectionHeader title="What it earns you" />
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <BigStat
+          label="Year-1 savings"
+          value={`$${Math.round(derived.annualSavingsCAD).toLocaleString()}`}
+        />
+        <BigStat
+          label="Lifetime value (25yr)"
+          value={`$${Math.round(derived.lifetimeValueCAD).toLocaleString()}`}
+        />
+        <BigStat
+          label="Self-coverage"
+          value={`${Math.round(derived.annualSelfCoveragePct)}%`}
+          sub="of your annual usage"
+        />
+      </div>
+    </Card>
+  );
+}
+
+function BigStat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div>
+      <div className="text-3xl font-semibold tabular-nums tracking-tight">
+        {value}
+      </div>
+      <div className="mt-1 text-xs uppercase tracking-[0.12em] text-[var(--subtle)]">
+        {label}
+      </div>
+      {sub && <div className="mt-0.5 text-xs text-[var(--muted)]">{sub}</div>}
+    </div>
+  );
+}
+
+/* -------------------------------- Data tab ------------------------------ */
+
+function DataTab({ derived }: { derived: DerivedResults }) {
+  return (
+    <>
+      <SunlightSection derived={derived} />
+      <NetMeteringFlowSection derived={derived} />
+      <MonthlyBalanceSection derived={derived} />
+      <PaybackTimelineSection derived={derived} />
+    </>
+  );
+}
 
 function SunlightSection({ derived }: { derived: DerivedResults }) {
-  // Aggregate 365 daily into 52 weekly points so the chart isn't a blur.
   const theoreticalWeekly = aggregateWeekly(derived.theoreticalDaily);
   const actualWeekly = aggregateWeekly(derived.actualDaily);
-
   const data = theoreticalWeekly.map((th, i) => ({
     week: i + 1,
     theoretical: th,
     actual: actualWeekly[i],
   }));
-
   return (
     <Card>
       <SectionHeader
@@ -179,7 +235,12 @@ function SunlightSection({ derived }: { derived: DerivedResults }) {
         hint="Theoretical clear-sky vs cloud-adjusted from 5-year history"
       />
       <div className="mt-4 grid items-center gap-6 sm:grid-cols-[1fr_auto_1fr]">
-        <SunChart data={data} dataKey="theoretical" tint="#facc15" label="Clear sky" />
+        <SunChart
+          data={data}
+          dataKey="theoretical"
+          tint="#facc15"
+          label="Clear sky"
+        />
         <div className="text-center">
           <div className="text-4xl font-semibold tabular-nums">
             {Math.round(derived.avgRealizationPct)}%
@@ -190,7 +251,12 @@ function SunlightSection({ derived }: { derived: DerivedResults }) {
             reaches you on average
           </div>
         </div>
-        <SunChart data={data} dataKey="actual" tint="#0ea5e9" label="After clouds" />
+        <SunChart
+          data={data}
+          dataKey="actual"
+          tint="#0ea5e9"
+          label="After clouds"
+        />
       </div>
     </Card>
   );
@@ -230,8 +296,6 @@ function SunChart({
     </div>
   );
 }
-
-/* ------------------- Section D: Net Metering 24h flow -------------------- */
 
 function NetMeteringFlowSection({ derived }: { derived: DerivedResults }) {
   const data = derived.hourlyGen.map((_g, h) => ({
@@ -281,14 +345,7 @@ function NetMeteringFlowSection({ derived }: { derived: DerivedResults }) {
               tickLine={false}
               axisLine={false}
             />
-            <YAxis
-              stroke="#8a948a"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              width={36}
-              tickFormatter={(v: number) => `${v}`}
-            />
+            <YAxis stroke="#8a948a" fontSize={11} tickLine={false} axisLine={false} width={36} />
             <Tooltip
               formatter={(value, name) => [
                 `${Math.abs(Number(value)).toFixed(2)} kWh`,
@@ -302,41 +359,10 @@ function NetMeteringFlowSection({ derived }: { derived: DerivedResults }) {
                 fontSize: 12,
               }}
             />
-            <Area
-              type="monotone"
-              dataKey="self"
-              stackId="up"
-              stroke="#10b981"
-              fill="#10b981"
-              fillOpacity={0.55}
-              isAnimationActive={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="exp"
-              stackId="up"
-              stroke="#38bdf8"
-              fill="#38bdf8"
-              fillOpacity={0.45}
-              isAnimationActive={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="grid"
-              stroke="#f43f5e"
-              fill="#f43f5e"
-              fillOpacity={0.25}
-              isAnimationActive={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="usage"
-              stroke="#ef4444"
-              strokeDasharray="4 4"
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
+            <Area type="monotone" dataKey="self" stackId="up" stroke="#10b981" fill="#10b981" fillOpacity={0.55} isAnimationActive={false} />
+            <Area type="monotone" dataKey="exp" stackId="up" stroke="#38bdf8" fill="#38bdf8" fillOpacity={0.45} isAnimationActive={false} />
+            <Area type="monotone" dataKey="grid" stroke="#f43f5e" fill="#f43f5e" fillOpacity={0.25} isAnimationActive={false} />
+            <Line type="monotone" dataKey="usage" stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1.5} dot={false} isAnimationActive={false} />
             <ReferenceLine y={0} stroke="#cbd5e1" />
           </ComposedChart>
         </ResponsiveContainer>
@@ -355,8 +381,8 @@ function NetMeteringFlowSection({ derived }: { derived: DerivedResults }) {
       </div>
 
       <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
-        Your {derived.systemKw.toFixed(1)} kW system is under Ontario's 12 kW
-        residential Net Metering cap (effective May 2026 under O. Reg. 541/05).
+        Your {derived.systemKw.toFixed(1)} kW system is under Ontario&apos;s
+        12 kW residential Net Metering cap (effective May 2026 under O. Reg. 541/05).
       </div>
     </Card>
   );
@@ -370,8 +396,6 @@ function tooltipName(key: string): string {
   return key;
 }
 
-/* ---------------------- Section D2: Monthly balance --------------------- */
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function MonthlyBalanceSection({ derived }: { derived: DerivedResults }) {
@@ -381,7 +405,6 @@ function MonthlyBalanceSection({ derived }: { derived: DerivedResults }) {
     gen: Math.round(derived.monthlyGen[i]),
     net: Math.round(derived.monthlyNet[i]),
   }));
-
   return (
     <Card>
       <SectionHeader
@@ -392,61 +415,27 @@ function MonthlyBalanceSection({ derived }: { derived: DerivedResults }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
             <CartesianGrid stroke="#e6e9e3" strokeDasharray="2 4" vertical={false} />
-            <XAxis
-              dataKey="month"
-              stroke="#8a948a"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              stroke="#8a948a"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              width={42}
-            />
-            <Tooltip
-              contentStyle={{
-                background: "white",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                fontSize: 12,
-              }}
-            />
+            <XAxis dataKey="month" stroke="#8a948a" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke="#8a948a" fontSize={11} tickLine={false} axisLine={false} width={42} />
+            <Tooltip contentStyle={{ background: "white", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} />
             <Bar dataKey="usage" fill="#f87171" radius={[3, 3, 0, 0]} name="Usage" />
             <Bar dataKey="gen" fill="#facc15" radius={[3, 3, 0, 0]} name="Generation" />
-            <Line
-              type="monotone"
-              dataKey="net"
-              stroke="#0f172a"
-              strokeWidth={1.5}
-              dot={{ r: 2.5, fill: "#0f172a" }}
-              name="Net"
-              isAnimationActive={false}
-            />
+            <Line type="monotone" dataKey="net" stroke="#0f172a" strokeWidth={1.5} dot={{ r: 2.5, fill: "#0f172a" }} name="Net" isAnimationActive={false} />
             <ReferenceLine y={0} stroke="#cbd5e1" />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-
       <div className="mt-5 grid grid-cols-3 gap-4 border-t border-[var(--border)] pt-5 text-sm">
         <div>
-          <div className="text-xl font-semibold tabular-nums">
-            {derived.netExportMonths}
-          </div>
+          <div className="text-xl font-semibold tabular-nums">{derived.netExportMonths}</div>
           <div className="text-xs text-[var(--muted)]">Net-export months</div>
         </div>
         <div>
-          <div className="text-xl font-semibold tabular-nums">
-            {derived.netDrawMonths}
-          </div>
+          <div className="text-xl font-semibold tabular-nums">{derived.netDrawMonths}</div>
           <div className="text-xs text-[var(--muted)]">Net-draw months</div>
         </div>
         <div>
-          <div className="text-xl font-semibold tabular-nums">
-            {Math.round(derived.annualSelfCoveragePct)}%
-          </div>
+          <div className="text-xl font-semibold tabular-nums">{Math.round(derived.annualSelfCoveragePct)}%</div>
           <div className="text-xs text-[var(--muted)]">Annual self-coverage</div>
         </div>
       </div>
@@ -454,18 +443,80 @@ function MonthlyBalanceSection({ derived }: { derived: DerivedResults }) {
   );
 }
 
-/* ------------------------- Section E: Readiness ------------------------- */
-
-interface ReadinessFactor {
-  label: string;
-  status: "pass" | "warn" | "info";
-  value: string;
-  why: string;
-  sourceLabel?: string;
-  sourceUrl?: string;
+function PaybackTimelineSection({ derived }: { derived: DerivedResults }) {
+  const data = derived.cumulativeCashflow.map((c, i) => ({
+    year: i,
+    cum: Math.round(c),
+  }));
+  return (
+    <Card>
+      <SectionHeader
+        title="When the system pays itself off"
+        hint="25-year cumulative cashflow with degradation + escalation"
+      />
+      <div className="mt-4 h-72 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+            <CartesianGrid stroke="#e6e9e3" strokeDasharray="2 4" vertical={false} />
+            <XAxis dataKey="year" stroke="#8a948a" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis
+              stroke="#8a948a"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              width={52}
+              tickFormatter={(v: number) =>
+                v >= 1000 || v <= -1000 ? `${Math.round(v / 1000)}k` : String(v)
+              }
+            />
+            <Tooltip
+              formatter={(value) => [`$${Number(value).toLocaleString()}`, "Cumulative"]}
+              labelFormatter={(y) => `Year ${y}`}
+              contentStyle={{ background: "white", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }}
+            />
+            <Bar dataKey="cum" radius={[3, 3, 0, 0]}>
+              {data.map((d, i) => (
+                <Cell key={i} fill={d.cum < 0 ? "#f87171" : "#10b981"} />
+              ))}
+            </Bar>
+            {derived.breakevenYear !== null && (
+              <ReferenceLine
+                x={derived.breakevenYear}
+                stroke="#0f172a"
+                strokeDasharray="4 4"
+                label={{
+                  value: `Year ${derived.breakevenYear} · paid off`,
+                  position: "top",
+                  fontSize: 11,
+                  fill: "#0f172a",
+                }}
+              />
+            )}
+            <ReferenceLine y={0} stroke="#94a3b8" />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-5 grid grid-cols-3 gap-4 border-t border-[var(--border)] pt-5">
+        <div>
+          <div className="text-xl font-semibold tabular-nums">${Math.round(derived.upfrontCost).toLocaleString()}</div>
+          <div className="mt-1 text-xs text-[var(--muted)]">Upfront cost</div>
+        </div>
+        <div>
+          <div className="text-xl font-semibold tabular-nums">${Math.round(derived.annualSavingsCAD).toLocaleString()}</div>
+          <div className="mt-1 text-xs text-[var(--muted)]">Year-1 savings</div>
+        </div>
+        <div>
+          <div className="text-xl font-semibold tabular-nums">${Math.round(derived.lifetimeValueCAD).toLocaleString()}</div>
+          <div className="mt-1 text-xs text-[var(--muted)]">Lifetime value</div>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
-function ReadinessSection({ derived }: { derived: DerivedResults }) {
+/* ----------------------------- Readiness tab ---------------------------- */
+
+function ReadinessTab({ derived }: { derived: DerivedResults }) {
   const factors = buildReadinessFactors(derived);
   return (
     <Card>
@@ -500,6 +551,15 @@ function ReadinessSection({ derived }: { derived: DerivedResults }) {
       </div>
     </Card>
   );
+}
+
+interface ReadinessFactor {
+  label: string;
+  status: "pass" | "warn" | "info";
+  value: string;
+  why: string;
+  sourceLabel?: string;
+  sourceUrl?: string;
 }
 
 function buildReadinessFactors(derived: DerivedResults): ReadinessFactor[] {
@@ -571,145 +631,41 @@ function StatusPill({ status }: { status: "pass" | "warn" | "info" }) {
   );
 }
 
-/* -------------------- Section F: Payback timeline ----------------------- */
+/* ----------------------------- Bottom CTA ------------------------------- */
 
-function PaybackTimelineSection({ derived }: { derived: DerivedResults }) {
-  const data = derived.cumulativeCashflow.map((c, i) => ({
-    year: i,
-    cum: Math.round(c),
-    yearly: Math.round(derived.yearlyCashflow[i]),
-  }));
-
+function BottomCTA({ derived }: { derived: DerivedResults }) {
   return (
-    <Card>
-      <SectionHeader
-        title="When the system pays itself off"
-        hint="25-year cumulative cashflow with degradation + escalation"
-      />
-      <div className="mt-4 h-72 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-            <CartesianGrid stroke="#e6e9e3" strokeDasharray="2 4" vertical={false} />
-            <XAxis
-              dataKey="year"
-              stroke="#8a948a"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              stroke="#8a948a"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              width={52}
-              tickFormatter={(v: number) =>
-                v >= 1000 || v <= -1000 ? `${Math.round(v / 1000)}k` : String(v)
-              }
-            />
-            <Tooltip
-              formatter={(value) => [
-                `$${Number(value).toLocaleString()}`,
-                "Cumulative",
-              ]}
-              labelFormatter={(y) => `Year ${y}`}
-              contentStyle={{
-                background: "white",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                fontSize: 12,
-              }}
-            />
-            <Bar dataKey="cum" radius={[3, 3, 0, 0]}>
-              {data.map((d, i) => (
-                <Cell key={i} fill={d.cum < 0 ? "#f87171" : "#10b981"} />
-              ))}
-            </Bar>
-            {derived.breakevenYear !== null && (
-              <ReferenceLine
-                x={derived.breakevenYear}
-                stroke="#0f172a"
-                strokeDasharray="4 4"
-                label={{
-                  value: `Year ${derived.breakevenYear} · paid off`,
-                  position: "top",
-                  fontSize: 11,
-                  fill: "#0f172a",
-                }}
-              />
-            )}
-            <ReferenceLine y={0} stroke="#94a3b8" />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="mt-5 grid grid-cols-3 gap-4 border-t border-[var(--border)] pt-5">
-        <div>
-          <div className="text-xl font-semibold tabular-nums">
-            ${Math.round(derived.upfrontCost).toLocaleString()}
-          </div>
-          <div className="mt-1 text-xs text-[var(--muted)]">Upfront cost</div>
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-white/95 backdrop-blur lg:left-[38vw]">
+      <div className="mx-auto flex w-full items-center justify-between gap-4 px-5 py-3 sm:px-8">
+        <div className="hidden text-xs text-[var(--subtle)] sm:block">
+          ${Math.round(derived.annualSavingsCAD).toLocaleString()}/yr · pays off year{" "}
+          {derived.breakevenYear ?? "—"}
         </div>
-        <div>
-          <div className="text-xl font-semibold tabular-nums">
-            ${Math.round(derived.annualSavingsCAD).toLocaleString()}
-          </div>
-          <div className="mt-1 text-xs text-[var(--muted)]">Year-1 savings</div>
-        </div>
-        <div>
-          <div className="text-xl font-semibold tabular-nums">
-            ${Math.round(derived.lifetimeValueCAD).toLocaleString()}
-          </div>
-          <div className="mt-1 text-xs text-[var(--muted)]">Lifetime value</div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-/* recharts Cell needs to be imported separately, but we declare via the
- * <Bar>'s children — recharts exports it. Importing inline to keep this file
- * self-contained: */
-import { Cell } from "recharts";
-
-/* ---------------------- Section G: Installer cards ---------------------- */
-
-const INSTALLERS = [
-  { name: "Pinegrove Solar", region: "Mississauga · Brampton", rating: 4.8 },
-  { name: "Lakeshore Renewables", region: "Hamilton · Burlington", rating: 4.7 },
-  { name: "GTA Solar Group", region: "Toronto · Markham", rating: 4.6 },
-];
-
-function InstallersSection() {
-  return (
-    <Card>
-      <SectionHeader
-        title="Pre-qualified installers"
-        hint="3 of 247 Ontario solar professionals matched to your roof"
-      />
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {INSTALLERS.map((i) => (
-          <div
-            key={i.name}
-            className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4"
+        <Link
+          href="/installers"
+          className="inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
+        >
+          Choose installer
+          <span
+            aria-hidden
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-black"
           >
-            <div className="text-sm font-semibold">{i.name}</div>
-            <div className="mt-1 text-xs text-[var(--muted)]">{i.region}</div>
-            <div className="mt-3 flex items-center justify-between text-xs">
-              <span className="font-medium">★ {i.rating.toFixed(1)}</span>
-              <span className="text-[var(--subtle)]">14-day SLA</span>
-            </div>
-          </div>
-        ))}
+            <svg
+              viewBox="0 0 16 16"
+              width="11"
+              height="11"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 8h10M9 4l4 4-4 4" />
+            </svg>
+          </span>
+        </Link>
       </div>
-      <button
-        disabled
-        title="Quote handoff goes live in the next release."
-        className="mt-5 cursor-not-allowed rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-[var(--background)] opacity-50"
-      >
-        Request 3 quotes
-      </button>
-    </Card>
+    </div>
   );
 }
 
@@ -726,9 +682,7 @@ function Card({ children }: { children: React.ReactNode }) {
 function SectionHeader({ title, hint }: { title: string; hint?: string }) {
   return (
     <div>
-      <h2 className="text-lg font-semibold tracking-[-0.01em] sm:text-xl">
-        {title}
-      </h2>
+      <h2 className="text-lg font-semibold tracking-[-0.01em] sm:text-xl">{title}</h2>
       {hint && <p className="mt-1 text-sm text-[var(--muted)]">{hint}</p>}
     </div>
   );
@@ -756,7 +710,7 @@ function useCountUp(target: number, durationMs: number): number {
     const start = performance.now();
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / durationMs);
-      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      const eased = 1 - Math.pow(1 - t, 3);
       setValue(Math.round(target * eased));
       if (t < 1) raf = requestAnimationFrame(tick);
     };
