@@ -58,6 +58,11 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+}
+
 /* Cross-browser range input — light-gray track, emerald fill via inline
    gradient on `background`, emerald thumb with white ring.
    !important is needed to defeat Tailwind preflight's form-input reset. */

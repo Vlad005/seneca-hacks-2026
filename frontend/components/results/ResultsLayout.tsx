@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Area,
     Bar,
@@ -36,7 +36,14 @@ interface Props {
     footprintSqm: number | null;
 }
 
-type TabValue = "overview" | "data" | "readiness";
+type ActiveDoor = "money" | "grid" | null;
+
+function doorFromHash(): ActiveDoor {
+    if (typeof window === "undefined") return null;
+    const h = window.location.hash.replace("#", "");
+    if (h === "money" || h === "grid") return h;
+    return null;
+}
 
 /* ------------------------------------------------------------------------ */
 
@@ -48,8 +55,49 @@ export function ResultsLayout({
     recomputing,
     footprintSqm,
 }: Props) {
-    const [tab, setTab] = useState<TabValue>("overview");
+    const [activeDoor, setActiveDoor] = useState<ActiveDoor>(null);
     const [modalOpen, setModalOpen] = useState(false);
+    const bodyRef = useRef<HTMLDivElement>(null);
+    // Tracks the previous activeDoor so we know whether a click is opening
+    // from null (pushState + scroll) or swapping (replaceState, no scroll).
+    const prevDoorRef = useRef<ActiveDoor>(null);
+
+    // Initial hash → state, then keep state in sync with back/forward.
+    useEffect(() => {
+        setActiveDoor(doorFromHash());
+        const onPop = () => setActiveDoor(doorFromHash());
+        window.addEventListener("popstate", onPop);
+        return () => window.removeEventListener("popstate", onPop);
+    }, []);
+
+    // State → URL + scroll on first open.
+    useEffect(() => {
+        const prev = prevDoorRef.current;
+        prevDoorRef.current = activeDoor;
+        if (typeof window === "undefined") return;
+        const hash = activeDoor ? `#${activeDoor}` : "";
+        const currentHash = window.location.hash;
+        const targetUrl =
+            window.location.pathname + window.location.search + hash;
+        if (currentHash === hash) return;
+        if (prev === null && activeDoor !== null) {
+            window.history.pushState(null, "", targetUrl);
+            // Smooth-scroll the body into view after the swap renders.
+            requestAnimationFrame(() => {
+                bodyRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                });
+            });
+        } else {
+            window.history.replaceState(null, "", targetUrl);
+        }
+    }, [activeDoor]);
+
+    const handleDoorClick = (door: "money" | "grid") => {
+        if (activeDoor === door) return;
+        setActiveDoor(door);
+    };
 
     return (
         <div className="relative px-5 pt-10 pb-32 sm:px-8 sm:pt-14 lg:pt-12">
@@ -59,29 +107,31 @@ export function ResultsLayout({
                 onCustomize={() => setModalOpen(true)}
             />
 
-            <div className="mt-8">
-                <TabBar value={tab} onChange={setTab} />
-            </div>
+            {activeDoor === null && (
+                <div className="mt-8">
+                    <DoorRow active={activeDoor} onSelect={handleDoorClick} />
+                </div>
+            )}
 
-            <div className="relative mt-6 space-y-8">
-                {recomputing && <RecomputeOverlay />}
-                <div
-                    className={
-                        recomputing ? "opacity-40 transition-opacity" : ""
-                    }
-                >
-                    {tab === "overview" && (
-                        <OverviewTab
+            {activeDoor !== null && (
+                <div ref={bodyRef} className="mt-8 space-y-8">
+                    {activeDoor === "money" && (
+                        <MoneyBody
                             derived={derived}
                             footprintSqm={footprintSqm}
                         />
                     )}
-                    {tab === "data" && <DataTab derived={derived} />}
-                    {tab === "readiness" && <ReadinessTab derived={derived} />}
+                    {activeDoor === "grid" && <GridBody derived={derived} />}
                 </div>
-            </div>
+            )}
 
-            <BottomCTA />
+            {recomputing && <RecomputeOverlay />}
+
+            <BottomCTA
+                onBack={
+                    activeDoor !== null ? () => setActiveDoor(null) : undefined
+                }
+            />
 
             <CustomizeModal
                 open={modalOpen}
@@ -99,11 +149,55 @@ export function ResultsLayout({
 
 function RecomputeOverlay() {
     return (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center pt-16">
-            <div className="rounded-full border border-[var(--border)] bg-white px-4 py-2 text-xs font-medium text-[var(--muted)] shadow-sm">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            style={{
+                background: "rgba(10, 14, 22, 0.45)",
+                backdropFilter: "blur(8px) saturate(140%)",
+                WebkitBackdropFilter: "blur(8px) saturate(140%)",
+            }}
+            aria-live="polite"
+            aria-busy="true"
+        >
+            <div
+                className="inline-flex items-center gap-3 rounded-full border border-[var(--border)] bg-white px-5 py-3 text-sm font-medium text-[var(--foreground)]"
+                style={{
+                    boxShadow:
+                        "0 16px 40px rgba(15, 23, 42, 0.22), 0 4px 12px rgba(15, 23, 42, 0.10)",
+                }}
+            >
+                <Spinner />
                 Recomputing your numbers…
             </div>
         </div>
+    );
+}
+
+function Spinner() {
+    return (
+        <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            className="animate-spin text-[var(--accent)]"
+            aria-hidden
+        >
+            <circle
+                cx="7"
+                cy="7"
+                r="5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeOpacity="0.25"
+            />
+            <path
+                d="M12 7a5 5 0 0 0-5-5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+            />
+        </svg>
     );
 }
 
@@ -181,36 +275,177 @@ function SlidersGlyph() {
     );
 }
 
-/* ----------------------------- TabBar ----------------------------------- */
+/* ----------------------------- DoorRow ---------------------------------- */
 
-const TABS: { value: TabValue; label: string }[] = [
-    { value: "overview", label: "Overview" },
-    { value: "data", label: "Data" },
-    { value: "readiness", label: "Readiness" },
+const DOORS: {
+    value: "money" | "grid";
+    label: string;
+    teaser: string;
+    image: string;
+    fallbackGradient: string;
+}[] = [
+    {
+        value: "money",
+        label: "Money",
+        teaser: "How the math works out on your roof.",
+        image: "/money.jpg",
+        fallbackGradient:
+            "linear-gradient(170deg, #3f2d10 0%, #7c4a14 45%, #d97706 110%)",
+    },
+    {
+        value: "grid",
+        label: "Grid",
+        teaser: "Will the grid let you connect?",
+        image: "/grid.jpg",
+        fallbackGradient:
+            "linear-gradient(170deg, #0b1738 0%, #1e2a5b 45%, #6366f1 110%)",
+    },
 ];
 
-function TabBar({
-    value,
-    onChange,
+function DoorRow({
+    active,
+    onSelect,
 }: {
-    value: TabValue;
-    onChange: (v: TabValue) => void;
+    active: ActiveDoor;
+    onSelect: (v: "money" | "grid") => void;
 }) {
     return (
-        <div className="inline-flex rounded-full border border-[var(--border)] bg-[var(--card)] p-0.5">
-            {TABS.map((t) => (
-                <button
-                    key={t.value}
-                    onClick={() => onChange(t.value)}
-                    className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                        value === t.value
-                            ? "bg-[var(--ink)] text-[var(--background)]"
-                            : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                    }`}
-                >
-                    {t.label}
-                </button>
-            ))}
+        <div className="flex flex-col gap-4">
+            {DOORS.map((d) => {
+                const isActive = active === d.value;
+                return (
+                    <button
+                        key={d.value}
+                        onClick={() => onSelect(d.value)}
+                        aria-pressed={isActive}
+                        className={`group relative aspect-[16/7] w-full overflow-hidden rounded-[28px] text-left transition ${
+                            isActive
+                                ? "ring-2 ring-[var(--foreground)] ring-offset-2 ring-offset-[var(--background)]"
+                                : "ring-1 ring-black/5 hover:ring-black/10"
+                        }`}
+                        style={{
+                            backgroundImage: `url('${d.image}'), ${d.fallbackGradient}`,
+                            backgroundSize: "cover, auto",
+                            backgroundPosition: "center, center",
+                            backgroundRepeat: "no-repeat, no-repeat",
+                        }}
+                    >
+                        {/* Whole-image dim so text and chip read clearly. */}
+                        <span
+                            aria-hidden
+                            className="absolute inset-0 bg-black/30"
+                        />
+                        {/* Stronger vignette at the bottom behind the chip. */}
+                        <span
+                            aria-hidden
+                            className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent"
+                        />
+
+                        {/* Label, top-left over the image. */}
+                        <span
+                            className="absolute top-5 left-6 text-3xl font-semibold tracking-[-0.01em] text-white sm:top-6 sm:left-7 sm:text-4xl"
+                            style={{
+                                textShadow: "0 2px 14px rgba(0,0,0,0.55)",
+                            }}
+                        >
+                            {d.label}
+                        </span>
+
+                        {/* Chip — darker base so it stays legible even where backdrop-filter
+                            misbehaves inside an overflow-hidden rounded ancestor. */}
+                        <span className="absolute right-4 bottom-4 left-4 sm:right-5 sm:bottom-5 sm:left-5">
+                            <span
+                                className="flex items-center gap-3 rounded-2xl border border-white/15 px-3.5 py-2.5 text-white"
+                                style={{
+                                    background: "rgba(10, 14, 22, 0.55)",
+                                    backdropFilter: "blur(18px) saturate(140%)",
+                                    WebkitBackdropFilter:
+                                        "blur(18px) saturate(140%)",
+                                }}
+                            >
+                                <span className="text-[14px] font-medium leading-tight sm:text-[15px]">
+                                    {d.teaser}
+                                </span>
+                                <span
+                                    aria-hidden
+                                    className="ml-auto inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-neutral-900 transition group-hover:bg-white/90"
+                                >
+                                    <DoorGlyph open={isActive} />
+                                </span>
+                            </span>
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+function DoorGlyph({ open }: { open: boolean }) {
+    return (
+        <svg
+            viewBox="0 0 16 16"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+        >
+            {open ? (
+                <path d="M4 6l4 4 4-4" />
+            ) : (
+                <path d="M3 8h10M9 4l4 4-4 4" />
+            )}
+        </svg>
+    );
+}
+
+/* ----------------------------- MoneyBody -------------------------------- */
+
+type MoneyTab = "overview" | "data";
+
+const MONEY_TABS: { value: MoneyTab; label: string }[] = [
+    { value: "overview", label: "Overview" },
+    { value: "data", label: "Data" },
+];
+
+function MoneyBody({
+    derived,
+    footprintSqm,
+}: {
+    derived: DerivedResults;
+    footprintSqm: number | null;
+}) {
+    const [tab, setTab] = useState<MoneyTab>("overview");
+    return (
+        <div className="space-y-6">
+            <div className="inline-flex rounded-full border border-[var(--border)] bg-[var(--card)] p-0.5">
+                {MONEY_TABS.map((t) => (
+                    <button
+                        key={t.value}
+                        onClick={() => setTab(t.value)}
+                        className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                            tab === t.value
+                                ? "bg-[var(--ink)] text-[var(--background)]"
+                                : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                        }`}
+                    >
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+            <div className="space-y-8">
+                {tab === "overview" && (
+                    <OverviewTab
+                        derived={derived}
+                        footprintSqm={footprintSqm}
+                    />
+                )}
+                {tab === "data" && <DataTab derived={derived} />}
+            </div>
         </div>
     );
 }
@@ -226,10 +461,7 @@ function OverviewTab({
 }) {
     return (
         <>
-            <RoofGlanceSection
-                derived={derived}
-                footprintSqm={footprintSqm}
-            />
+            <RoofGlanceSection derived={derived} footprintSqm={footprintSqm} />
             <KeyNumbersSection derived={derived} />
         </>
     );
@@ -805,9 +1037,9 @@ function PaybackTimelineSection({ derived }: { derived: DerivedResults }) {
     );
 }
 
-/* ----------------------------- Readiness tab ---------------------------- */
+/* ----------------------------- Grid body -------------------------------- */
 
-function ReadinessTab({ derived }: { derived: DerivedResults }) {
+function GridBody({ derived }: { derived: DerivedResults }) {
     return (
         <Card>
             <SectionHeader title="Connection readiness" />
@@ -1013,7 +1245,7 @@ function FeederCapacityItem() {
     const filled = utilized * circumference;
 
     return (
-        <ReadinessRow eyebrow="Feeder capacity">
+        <ReadinessRow eyebrow="Hosting capacity">
             <div className="mt-4 flex items-center gap-6">
                 <div className="relative h-24 w-24 shrink-0">
                     <svg
@@ -1256,16 +1488,36 @@ function HouseGlyphBox() {
 
 /* ----------------------------- Bottom CTA ------------------------------- */
 
-function BottomCTA() {
+function BottomCTA({ onBack }: { onBack?: () => void }) {
+    const backClasses =
+        "inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-black/5 hover:text-[var(--foreground)]";
+    const backArrow = (
+        <svg
+            viewBox="0 0 16 16"
+            width="11"
+            height="11"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+        >
+            <path d="M10 4l-4 4 4 4" />
+        </svg>
+    );
     return (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border)] bg-white/95 backdrop-blur lg:left-[38vw]">
             <div className="mx-auto flex w-full items-center justify-between gap-4 px-5 py-3 sm:px-8">
-                <Link
-                    href="/rebates/extras"
-                    className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted)] transition hover:bg-black/5 hover:text-[var(--foreground)]"
-                >
-                    Back
-                </Link>
+                {onBack ? (
+                    <button onClick={onBack} className={backClasses}>
+                        Back
+                    </button>
+                ) : (
+                    <Link href="/rebates/extras" className={backClasses}>
+                        Back
+                    </Link>
+                )}
                 <Link
                     href="/installers"
                     className="inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
