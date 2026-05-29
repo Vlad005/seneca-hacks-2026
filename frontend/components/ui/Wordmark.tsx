@@ -1,23 +1,20 @@
+import Image from "next/image";
 import Link from "next/link";
 
-interface Props {
-    className?: string;
-    tone?: "light" | "dark";
-}
-
-export function Wordmark({ className = "", tone = "dark" }: Props) {
-    const textCls =
-        tone === "light" ? "text-white" : "text-[var(--foreground)]";
+export function Wordmark() {
     return (
         <Link
             href="/"
-            className={`group inline-flex items-center gap-2 text-[15px] font-semibold tracking-tight ${textCls} ${className}`}
+            className="group inline-flex items-center transition hover:opacity-80"
+            aria-label="Helios — home"
         >
-            <span
-                aria-hidden
-                className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 transition group-hover:scale-110"
+            <Image
+                src="/logo.png"
+                alt="Helios"
+                width={130}
+                height={30}
+                priority
             />
-            Helios
         </Link>
     );
 }
